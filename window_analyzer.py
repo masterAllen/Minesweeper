@@ -76,8 +76,8 @@ class WindowAnalyzer:
 
 
     def click_goto_next_level(self):
-        # screenshot = self.capture_window_screenshot()
-        # screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+        screenshot = self.capture_window_screenshot()
+        screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
         # rows, cols = screenshot.shape[0:2]
         # screenshot[int(rows*0.75):int(rows*0.8), int(cols*0.68):int(cols*0.7)] = [255, 0, 0]
         # cv2.imwrite("screenshot.png", screenshot)
@@ -86,10 +86,13 @@ class WindowAnalyzer:
         clicked_x = int(self.window_height * 0.77) + self.win_left_top[1]
         clicked_y = int(self.window_width * 0.55) + self.win_left_top[0]
 
+        # screenshot[clicked_x:clicked_x+10, clicked_y:clicked_y+10] = [255, 0, 0]
+        # cv2.imwrite("screenshot.png", screenshot)
+
         pywinauto.mouse.move(coords=(clicked_y, clicked_x))
-        time.sleep(0.2)
+        time.sleep(1)
         pywinauto.mouse.click(coords=(clicked_y, clicked_x))
-        time.sleep(0.2)
+        time.sleep(1)
 
 
     def parse_img_to_table(self, screenshot: Image.Image) -> np.ndarray:
