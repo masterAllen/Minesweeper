@@ -24,7 +24,7 @@ except ImportError:
     print("警告: keyboard 库未安装，空格键退出功能不可用。请运行: pip install keyboard")
 
 # 导入规则模块
-from rules import V, Q, C, T
+from rules import V, Q, C, T, O
 
 class Constraint:
     def __init__(self, coordinates: list):
@@ -79,8 +79,8 @@ def union_constraints(A: Constraint, B: Constraint) -> Constraint:
     return A | B
 
 class Weeper:
-    def __init__(self, table: np.ndarray, mine_total: int, \
-        is_V: bool = True, is_Q: bool = False, is_C: bool = False, is_T: bool = False) -> None:
+    def __init__(self, table: np.ndarray, mine_total: int, is_V: bool = True, \
+        is_Q: bool = False, is_C: bool = False, is_T: bool = False, is_O: bool = False) -> None:
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
@@ -90,6 +90,7 @@ class Weeper:
         self.is_Q = is_Q
         self.is_C = is_C
         self.is_T = is_T
+        self.is_O = is_O
         
         if table is None:
             window_title = "Minesweeper Variants"
@@ -152,10 +153,17 @@ class Weeper:
         if min_mine_count > max_mine_count:
             # print(f'min_mine_count > max_mine_count: {min_mine_count} > {max_mine_count}')
             raise ValueError(f'min_mine_count > max_mine_count: {min_mine_count} > {max_mine_count}')
+        if len(coordinates) < min_mine_count:
+            raise ValueError(f'min_mine_count > len(coordinates): {min_mine_count} > {len(coordinates)}')
 
         is_update = False
         new_min, new_max = 0, 0
         if coordinates in constraints:
+            if min_mine_count > constraints[coordinates][1]:
+                raise ValueError(f'min_mine_count > old_max_mine_count: {min_mine_count} > {constraints[coordinates][1]}')
+            if max_mine_count < constraints[coordinates][0]:
+                raise ValueError(f'max_mine_count < old_min_mine_count: {max_mine_count} < {constraints[coordinates][0]}')
+
             if min_mine_count > constraints[coordinates][0] or max_mine_count < constraints[coordinates][1]:
                 new_min = max(min_mine_count, constraints[coordinates][0])
                 new_max = min(max_mine_count, constraints[coordinates][1])
@@ -178,6 +186,8 @@ class Weeper:
         if self.is_C and not C.is_legal(table):
             return False
         if self.is_T and not T.is_legal(table):
+            return False
+        if self.is_O and not O.is_legal(table, self.mine_count, self):
             return False
         return True
 
@@ -203,6 +213,8 @@ class Weeper:
             rule_constraints_list.append(C.create_constraints(table))
         if self.is_T:
             rule_constraints_list.append(T.create_constraints(table))
+        if self.is_O:
+            rule_constraints_list.append(O.create_constraints(table))
 
         # 合并所有规则的约束
         for rule_constraints in rule_constraints_list:
@@ -448,6 +460,13 @@ class Weeper:
                         scores.append(score)
                         coordinates_list.append(coordinates)
 
+                if len(coordinates_list) == 0:
+                    for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+                        if max_mine_count == min_mine_count:
+                            score = math.comb(len(coordinates), min_mine_count)
+                            scores.append(score)
+                            coordinates_list.append(coordinates)
+
                 # 排序，优先选择 scores 最低的
                 idx = sorted(range(len(scores)), key=lambda i: scores[i])
                 coordinates_list = [coordinates_list[i] for i in idx]
@@ -460,13 +479,15 @@ class Weeper:
                     coordinates = coordinates_list[i]
                     min_mine_count, max_mine_count = constraints[coordinates]
 
-
-                    combinations = []
-                    for idx, marked_mine_coordinates in enumerate(itertools.combinations(coordinates, min_mine_count)):
-                        combinations.append(tuple(marked_mine_coordinates))
-                    
-                    # 打乱顺序
-                    random.shuffle(combinations)
+                    print(f'坐标: {coordinates}，长度: {len(coordinates)}, 雷数: {min_mine_count} ~ {max_mine_count}')
+                    if scores[i] < 1000:
+                        combinations = []
+                        for idx, marked_mine_coordinates in enumerate(itertools.combinations(coordinates, min_mine_count)):
+                            combinations.append(tuple(marked_mine_coordinates))
+                        # 打乱顺序
+                        random.shuffle(combinations)
+                    else:
+                        combinations = itertools.combinations(coordinates, min_mine_count)
 
                     # 所有 True 的结果中的可行解
                     common_mine_coordinates = set()
@@ -483,11 +504,11 @@ class Weeper:
 
                         self.refresh_table(refresh_by_screenshot=False)
 
-                        info1 = f'====> 尝试方法三暴力遍历（{idx}/{len(combinations)}）（{i}/{len(coordinates_list)}）；'
+                        info1 = f'====> 尝试方法三暴力遍历（{idx}/{scores[i]}）（{i}/{len(coordinates_list)}）；'
                         info2 = f'坐标: {marked_mine_coordinates}；'
                         info3 = f'剩余雷数: {self.mine_count}；未知格: {self.unknown_count}；'
-                        is_ok = self.solve_by_backtracking(depth=1)
 
+                        is_ok = self.solve_by_backtracking(depth=1)
                         info4 = f'结果 = {is_ok}'
                         print(info1 + info2 + info3 + info4)
 
@@ -497,7 +518,7 @@ class Weeper:
                             ok_count += 1
 
                         # 如果不在回溯中，并且前面遍历都失败了，那说明一定是最后一个解了，可以退出
-                        if error_count == len(combinations) - 1 and idx == len(combinations) - 2:
+                        if error_count == scores[i] - 1 and idx == scores[i] - 2:
                             marked_mine_coordinates = combinations[-1]
                             common_mine_coordinates = set(marked_mine_coordinates)
                             common_safe_coordinates = set(coordinates) - common_mine_coordinates
@@ -555,7 +576,6 @@ class Weeper:
                 exit(0)
                 return False
 
-            # 如果正在回溯中，那么就只是标记一下；不真正点击
             for coordinate in mine_marked:
                 print(f'Mine: {coordinate}')
                 self.table[coordinate[0], coordinate[1]] = 'mine'
@@ -587,7 +607,7 @@ class Weeper:
         求解某个 Table，如果没有确定解，则会你先回溯剪枝
         """
 
-        PRINT_FLAG = (depth < 10)
+        PRINT_FLAG = (depth < 1)
         def my_print(*args, **kwargs):
             if PRINT_FLAG:
                 print(*args, **kwargs)
@@ -659,15 +679,18 @@ class Weeper:
                 coordinates_list = []
                 # 只选择确定雷数的
                 for coordinates, (min_mine_count, max_mine_count) in constraints.items():
-                    if len(coordinates) < 30 and max_mine_count == min_mine_count:
+                    if len(coordinates) < 10 and max_mine_count == min_mine_count:
                         score = math.comb(len(coordinates), min_mine_count)
                         scores.append(score)
                         coordinates_list.append(coordinates)
 
-                    # # 一个很特殊的情况，如果某个坐标可以确定有雷或无雷，则对这个坐标也进行处理
-                    # if len(coordinates) == 1 and min_mine_count == 0:
-                    #     scores.append(1)
-                    #     coordinates_list.append(coordinates)
+                # 如果没有 coordinates_list，那就放宽条件
+                if len(coordinates_list) == 0:
+                    for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+                        if max_mine_count == min_mine_count:
+                            score = math.comb(len(coordinates), min_mine_count)
+                            scores.append(score)
+                            coordinates_list.append(coordinates)
 
                 # 排序，优先选择 scores 最低的
                 idx = sorted(range(len(scores)), key=lambda i: scores[i])
@@ -686,9 +709,12 @@ class Weeper:
                     # 记录是否可以走下去
                     is_oks = dict()
 
-                    combinations = []
-                    for idx, marked_mine_coordinates in enumerate(itertools.combinations(coordinates, min_mine_count)):
-                        combinations.append(tuple(marked_mine_coordinates))
+                    if scores[i] < 1000:
+                        combinations = []
+                        for idx, marked_mine_coordinates in enumerate(itertools.combinations(coordinates, min_mine_count)):
+                            combinations.append(tuple(marked_mine_coordinates))
+                    else:
+                        combinations = itertools.combinations(coordinates, min_mine_count)
 
                     for idx, marked_mine_coordinates in enumerate(combinations):
                         self.table = table_bak.copy()
@@ -700,9 +726,8 @@ class Weeper:
 
                         self.refresh_table(refresh_by_screenshot=False)
 
-                        info_str1 = f'暴力推测 {marked_mine_coordinates} ({idx}/{len(combinations)})'
+                        info_str1 = f'暴力推测 {marked_mine_coordinates} ({idx}/{scores[i]})'
                         info_str2 = f'剩余雷数： {self.mine_count}；未知格： {self.unknown_count}'
-                        my_print(f'{depth:02d}' + '--'*(depth+1) + f'--> {info_str1}；{info_str2}')
 
                         is_ok = self.solve_by_backtracking(depth=depth+1)
                         my_print(f'{depth:02d}' + '--'*(depth+1) + f'--> {info_str1} 的结果：{is_ok}')
@@ -775,7 +800,8 @@ class Weeper:
             if is_done:
                 self.window_analyzer.click_goto_next_level()
             else:
-                self.window_analyzer.click_skip_this_level()
+                exit(0)
+                # self.window_analyzer.click_skip_this_level()
 
 
     def solve_by_ensure(self, constraints: dict) -> tuple[set, set]:
@@ -866,6 +892,7 @@ class Weeper:
                     is_ok = self.deduce_table_with_assumptions(try_count=5)
                     record_tables[marked_mine_coordinates] = (is_ok, self.table.copy())
                 print(f'猜测 {marked_mine_coordinates} 的结果: {is_ok}')
+
                 if is_ok:
                     tables.append(self.table.copy())
                     assumptions.append(marked_mine_coordinates)
@@ -931,8 +958,9 @@ if __name__ == "__main__":
     is_V = True
     is_Q = False
     is_C = False
-    is_T = True
-    weeper = Weeper(None, mine_total=26, is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T)
+    is_T = False
+    is_O = True
+    weeper = Weeper(None, mine_total=26, is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, is_O=is_O)
     weeper.solve(10)
     weeper.window_analyzer.click_goto_next_level()
 
