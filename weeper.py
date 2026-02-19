@@ -23,6 +23,9 @@ except ImportError:
     KEYBOARD_AVAILABLE = False
     print("警告: keyboard 库未安装，空格键退出功能不可用。请运行: pip install keyboard")
 
+# 导入规则模块
+from rules import V, Q, C, T
+
 class Constraint:
     def __init__(self, coordinates: list):
         # self.coordinates = tuple(coordinates)
@@ -77,16 +80,16 @@ def union_constraints(A: Constraint, B: Constraint) -> Constraint:
 
 class Weeper:
     def __init__(self, table: np.ndarray, mine_total: int, \
-        is_Q: bool, is_C: bool, is_T: bool, is_D: bool) -> None:
+        is_V: bool = True, is_Q: bool = False, is_C: bool = False, is_T: bool = False) -> None:
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
         self.table = table
 
+        self.is_V = is_V
         self.is_Q = is_Q
         self.is_C = is_C
         self.is_T = is_T
-        self.is_D = is_D
         
         if table is None:
             window_title = "Minesweeper Variants"
@@ -164,348 +167,56 @@ class Weeper:
 
         return is_update, new_min, new_max
 
-    def _get_four_directions(self, table: np.ndarray, coordinate: tuple[int, int]) -> list[tuple[int, int]]:
-        """
-        返回四个方向的坐标：上下左右
-        """
-        directions = [
-            (-1, 0), (0, 1), (1, 0), (0, -1)    # 左、右
-        ]
-
-        results = []
-        for dx, dy in directions:
-            coord = (coordinate[0] + dx, coordinate[1] + dy)
-            if coord[0] < 0 or coord[0] >= table.shape[0] or coord[1] < 0 or coord[1] >= table.shape[1]:
-                continue
-            results.append(coord)
-        return results
-
-    def _get_eight_directions(self, table: np.ndarray, coordinate: tuple[int, int]) -> list[tuple[int, int]]:
-        """
-        返回八连通的坐标：上下左右 + 四个对角线
-        """
-        directions = [
-            (-1, -1), (-1, 0), (-1, 1),  # 上左、上、上右
-            (0, -1),           (0, 1),    # 左、右
-            (1, -1),  (1, 0),  (1, 1)     # 下左、下、下右
-        ]
-
-        results = []
-        for dx, dy in directions:
-            coord = (coordinate[0] + dx, coordinate[1] + dy)
-            if coord[0] < 0 or coord[0] >= table.shape[0] or coord[1] < 0 or coord[1] >= table.shape[1]:
-                continue
-            results.append(coord)
-        return results
-    
-    def _bfs_connected_region(self, table: np.ndarray, start_coords: list, connected_type: int,
-                              allowed_cell_types: set) -> set:
-        """
-        使用 BFS 找到从起始坐标开始的四/八连通区域
-        
-        Args:
-            table: 全局表格
-            connected_type: 4 - 四连通，8 - 八连通
-            start_coords: 起始坐标列表（可以是单个坐标的列表）
-            allowed_cell_types: 允许通过的格子类型集合，例如 {'mine', 'unknown'}
-        
-        Returns:
-            连通区域的坐标集合
-        """
-        if len(start_coords) == 0:
-            return set()
-        
-        connected_region = set()
-        queue = start_coords.copy()
-        
-        for coord in start_coords:
-            connected_region.add(coord)
-        
-        while queue:
-            current = queue.pop(0)
-            
-            # 检查八个方向的邻居
-            if connected_type == 8:
-                neighbors = self._get_eight_directions(table, current)
-            elif connected_type == 4:
-                neighbors = self._get_four_directions(table, current)
-
-            for neighbor in neighbors:
-                # 如果已经访问过，跳过
-                if neighbor in connected_region:
-                    continue
-                
-                # 判断是否可以访问：检查格子类型是否在允许的集合中
-                cell_value = table[neighbor[0], neighbor[1]]
-                if cell_value in allowed_cell_types:
-                    connected_region.add(neighbor)
-                    queue.append(neighbor)
-        
-        return connected_region
-    
-    def _find_all_connected_regions(self, table: np.ndarray, target_coords: list, connected_type: int,
-                                    allowed_cell_types: set) -> list:
-        """
-        找到所有分离的连通区域
-        
-        Args:
-            table: 全局表格
-            target_coords: 目标坐标列表（例如所有 mine 的坐标）
-            allowed_cell_types: 允许通过的格子类型集合，例如 {'mine'} 或 {'mine', 'unknown'}
-        
-        Returns:
-            连通区域列表，每个元素是一个坐标集合
-        """
-        if len(target_coords) == 0:
-            return []
-        
-        visited = set()
-        connected_regions = []
-        
-        for start_coord in target_coords:
-            if start_coord in visited:
-                continue
-            
-            # 找到从当前坐标开始的连通区域
-            connected_region = self._bfs_connected_region(
-                table, [start_coord], connected_type,
-                allowed_cell_types=allowed_cell_types
-            )
-            
-            # 只保留目标坐标（例如只保留 mine）
-            if len(connected_region) > 0:
-                connected_regions.append(connected_region)
-                visited.update(connected_region)
-        
-        return connected_regions
-
-    def is_three_not_connected(self, table: np.ndarray) -> bool:
-        """
-        检查当前雷的坐标是否有三连，如果有则返回 False
-        四个方向：水平、垂直、左上-右下对角线、右上-左下对角线
-        """
-        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-        
-        for i in range(table.shape[0]):
-            for j in range(table.shape[1]):
-                if table[i, j] != 'mine':
-                    continue
-                
-                for di, dj in directions:
-                    # 检查当前点沿着 direction 方向是否有三连雷
-                    count = 1
-                    for step in [1, 2]:
-                        ni, nj = i + di * step, j + dj * step
-                        if 0 <= ni < table.shape[0] and 0 <= nj < table.shape[1]:
-                            if table[ni, nj] == 'mine':
-                                count += 1
-                    if count >= 3:
-                        return False
-        
-        return True
-        
-    
-    def is_eight_connected(self, table: np.ndarray) -> bool:
-        """
-        检查当前雷的坐标是否形成八连通区域（八连通：上下左右 + 四个对角线方向）
-        允许通过 unknown 格子连接，但不能通过数字或 question 格子连接
-        
-        Args:
-            table: 全局表格
-        
-        Returns:
-            True 如果所有雷八连通，False 否则
-        """
-        mine_coordinates = []
-        for i in range(table.shape[0]):
-            for j in range(table.shape[1]):
-                if table[i, j] == 'mine':
-                    mine_coordinates.append((i, j))
-
-        if len(mine_coordinates) == 0 or len(mine_coordinates) == 1:
-            return True
-        
-        # 使用通用函数找到连通区域（允许通过 mine 和 unknown）
-        connected_region = self._bfs_connected_region(
-            table, [mine_coordinates[0]], 
-            allowed_cell_types={'mine', 'unknown'}
-        )
-        
-        # 检查是否所有雷都被访问到
-        mine_set = set(mine_coordinates)
-        visited_mines = connected_region & mine_set
-        return len(visited_mines) == len(mine_coordinates)
-
     def check_rules(self, table: np.ndarray) -> bool:
         """
         检查当前表格是否符合所有规则
         """
-        is_ok = True
-        if self.is_C:
-            is_ok = is_ok and self.is_eight_connected(table)
-        if self.is_T:
-            is_ok = is_ok and self.is_three_not_connected(table)
-        return is_ok
+        if self.is_V and not V.is_legal(table):
+            return False
+        if self.is_Q and not Q.is_legal(table):
+            return False
+        if self.is_C and not C.is_legal(table):
+            return False
+        if self.is_T and not T.is_legal(table):
+            return False
+        return True
 
     '''
     constraints:
         k --> 坐标集合
         v --> 雷的数量（最小值、最大值）
     '''
-    def create_table_constraints(self, table: np.ndarray, mine_count: int) -> np.ndarray:
+    def create_table_constraints(self, table: np.ndarray, mine_count: int) -> dict:
         constraints = dict()
-        unknown_coordinates = list()
 
-        # 先遍历所有格子，创建约束
-        for i in range(table.shape[0]):
-            for j in range(table.shape[1]):
-                if table[i, j].isdigit():
-                    coordinates, mine_count = self.create_cell_contraint(i, j, table)
-                    if len(coordinates) > 0:
-                        constraints[coordinates] = (mine_count, mine_count)
-                if table[i, j] == 'unknown':
-                    unknown_coordinates.append((i, j))
-
-        # [Q] 的规则，2x2 至少有一个
+        if self.mine_count == 0:
+            self.check_rules(table)
+        
+        # 收集各个规则的约束
+        rule_constraints_list = []
+        
+        if self.is_V:
+            rule_constraints_list.append(V.create_constraints(table))
         if self.is_Q:
-            for i in range(table.shape[0]-1):
-                for j in range(table.shape[1]-1):
-                    coordinates = []
-                    already_has_mine = False
-                    for dx in [0, 1]:
-                        for dy in [0, 1]:
-                            if table[i+dx, j+dy] == 'unknown':
-                                coordinates.append((i+dx, j+dy))
-                            if table[i+dx, j+dy] == 'mine':
-                                already_has_mine = True
-                    if len(coordinates) > 0 and not already_has_mine:
-                        is_update, new_min, new_max = self._update_constraints(constraints, Constraint(coordinates), 1, len(coordinates))
-                        if is_update:
-                            constraints[Constraint(coordinates)] = (new_min, new_max)
-
-        # [C] 的规则，所有雷的区域是八连通的
+            rule_constraints_list.append(Q.create_constraints(table))
         if self.is_C:
-            # 如果某个点是雷，四周要有一个雷
-            # --> 1. 修改为求解雷的联通区域（unknown不可通），每个区域的四周会一定要有雷
-
-            # 四周如果全是已知的，那么这块区域一定是安全的
-            # --> 2. 修改为直接求雷的联通区域（unknown可通），那么剩下的 unknown 一定不可能是雷
-
-            # 找到所有 mine 的坐标
-            mine_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'mine']
-
-            # 1. 求解所有 mine 的联通区域（只考虑 mine，不考虑 unknown），然后每个联通区域的四周要有雷
-            if len(mine_coordinates) > 0:
-                
-                # 找到所有分离的 mine 连通区域（只考虑 mine，不考虑 unknown）
-                connected_regions = self._find_all_connected_regions(
-                    table, mine_coordinates, connected_type=8,
-                    allowed_cell_types={'mine'}  # 只允许通过 mine
-                )
-
-                # 如果没有雷了，那么就不用管了
-                if self.mine_count == 0:
-                    # 没有雷的时候，mines 要是联通的
-                    if len(connected_regions) > 1:
-                        raise ValueError(f'找到多个连通区域：{connected_regions}')
-                else:
-                    # 现在 connected_regions 包含了所有分离的 mine 连通区域
-                    # 每个连通区域的四周要有雷
-                    for connected_region in connected_regions:
-                        neighbors = set()
-                        for coordinate in connected_region:
-                            for neighbor in self._get_eight_directions(table, coordinate):
-                                if table[neighbor[0], neighbor[1]] == 'unknown':
-                                    neighbors.add(neighbor)
-                        if len(neighbors) > 0:
-                            constraint = Constraint(list(neighbors))
-                            is_update, new_min, new_max = self._update_constraints(constraints, constraint, 1, len(neighbors))
-                            if is_update:
-                                constraints[constraint] = (new_min, new_max)
-                        else:
-                            raise ValueError(f'某个连通区域的四周没有 unknown，坐标：{connected_region}')
-                
-            # 2. 求当前雷的联通区域，剩下的 unknown 一定不是雷
-            if len(mine_coordinates) > 0:
-
-                # 使用通用函数找到所有与 mine 八连通的区域（包括可以连接的 unknown）
-                connected_regions = self._find_all_connected_regions(
-                    table, [mine_coordinates[0]], connected_type=8,
-                    allowed_cell_types={'mine', 'unknown'}
-                )
-
-                if len(connected_regions) > 1:
-                    raise ValueError(f'找到多个连通区域：{connected_regions}')
-                
-                # 找到所有不在连通区域中的 unknown，它们一定不是雷
-                safe_unknowns = []
-                for i in range(table.shape[0]):
-                    for j in range(table.shape[1]):
-                        if table[i, j] == 'unknown' and (i, j) not in connected_regions[0]:
-                            safe_unknowns.append((i, j))
-                
-                # 为这些安全的 unknown 添加约束：它们一定不是雷
-                if len(safe_unknowns) > 0:
-                    print(f'这些坐标一定是安全的：{safe_unknowns}')
-                    safe_constraint = Constraint(safe_unknowns)
-                    is_update, new_min, new_max = self._update_constraints(constraints, safe_constraint, 0, 0)
-                    if is_update:
-                        constraints[safe_constraint] = (new_min, new_max)
-            
-            # 求解所有 mine 的联通区域，然后每个联通区域的四周要有雷
-
-        # [T] 的规则，雷不能构成三连
-        # 对于每个三连区域（mine + unknown 组合），unknown 中最多有 2 - mine_count 个雷
+            rule_constraints_list.append(C.create_constraints(table))
         if self.is_T:
-            directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-            seen_triplets = set()  # 避免重复处理相同的三连区域
-            
-            for i in range(table.shape[0]):
-                for j in range(table.shape[1]):
-                    for di, dj in directions:
-                        # 获取三连区域的三个坐标
-                        triplet = [(i + di * k, j + dj * k) for k in range(3)]
-                        
-                        # 检查是否越界
-                        if not all(0 <= x < table.shape[0] and 0 <= y < table.shape[1] for x, y in triplet):
-                            continue
-                        
-                        # 用排序后的元组作为 key，避免重复
-                        triplet_key = tuple(sorted(triplet))
-                        if triplet_key in seen_triplets:
-                            continue
-                        seen_triplets.add(triplet_key)
-                        
-                        # 统计三连区域中的 mine 和 unknown
-                        mine_count = 0
-                        unknowns = []
-                        has_known = False
-                        for x, y in triplet:
-                            if table[x, y] == 'mine':
-                                mine_count += 1
-                            elif table[x, y] == 'unknown':
-                                unknowns.append((x, y))
-                            else:
-                                # 如果是已知格（数字），那这个三连区域不可能三连雷
-                                has_known = True
-                                break
-                        
-                        # 如果有已知格，跳过这个三连区域
-                        if has_known:
-                            continue
-                        
-                        # 如果有 unknown，添加约束：最多 2 - mine_count 个雷
-                        if len(unknowns) > 0:
-                            max_mines = 2 - mine_count
-                            if max_mines < len(unknowns):  # 只有约束有意义时才添加
-                                constraint = Constraint(unknowns)
-                                is_update, new_min, new_max = self._update_constraints(
-                                    constraints, constraint, 0, max_mines)
-                                if is_update:
-                                    constraints[constraint] = (new_min, new_max)
+            rule_constraints_list.append(T.create_constraints(table))
 
+        # 合并所有规则的约束
+        for rule_constraints in rule_constraints_list:
+            if rule_constraints is None:
+                continue
+            for coords, (min_val, max_val) in rule_constraints.items():
+                constraint = Constraint(coords)
+                is_update, new_min, new_max = self._update_constraints(constraints, constraint, min_val, max_val)
+                if is_update:
+                    constraints[constraint] = (new_min, new_max)
 
         # 全局数量也有一个约束；不过为了防止加入之后，导致 constraints 过多，这里做个判断
+        unknown_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'unknown']
+        
         is_add = False
         if len(constraints) < 100:
             is_add = True
@@ -611,25 +322,6 @@ class Weeper:
 
         return return_new_constraints
 
-    def create_cell_contraint(self, i: int, j: int, table: np.ndarray):
-        # table[i, j] 必须是数字
-        assert(table[i, j].isdigit())
-
-        coordinates = []
-        found_mines = 0
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                ni = i + dx
-                nj = j + dy
-                if ni < 0 or ni >= table.shape[0] or nj < 0 or nj >= table.shape[1]:
-                    continue
-
-                if table[ni, nj] == 'mine':
-                    found_mines += 1
-                if table[ni, nj] == 'unknown':
-                    coordinates.append((ni, nj))
-
-        return Constraint(coordinates), int(table[i, j]) - found_mines
 
     def init(self):
         self.refresh_table(refresh_by_screenshot=True)
@@ -1115,11 +807,20 @@ class Weeper:
         # 只选择确定雷数的
         for coordinates, (min_mine_count, max_mine_count) in constraints.items():
             # 这里一开始强制是 min==max，但其实没必要，这里应该是有雷的坐标
-            # 只尝试 20 种
-            if len(coordinates) < 20 and max_mine_count - min_mine_count < 3 and min_mine_count > 0:
+            # 但还是先优先选择 max == min
+            if len(coordinates) > 9 or min_mine_count == 0:
+                continue
+
+            if max_mine_count == min_mine_count:
                 score = math.comb(len(coordinates), min_mine_count)
                 if score < thresh:
                     scores.append(score)
+                    coordinates_list.append(coordinates)
+
+            elif max_mine_count - min_mine_count < 3:
+                score = math.comb(len(coordinates), min_mine_count)
+                if score < thresh:
+                    scores.append(score * 100)
                     coordinates_list.append(coordinates)
 
         # 排序，优先选择 scores 最低的
@@ -1227,11 +928,11 @@ class Weeper:
 
 
 if __name__ == "__main__":
+    is_V = True
     is_Q = False
     is_C = False
-    is_T = False
-    is_D = True
-    weeper = Weeper(None, mine_total=26, is_Q=is_Q, is_C=is_C, is_T=is_T, is_D=is_D)
+    is_T = True
+    weeper = Weeper(None, mine_total=26, is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T)
     weeper.solve(10)
     weeper.window_analyzer.click_goto_next_level()
 

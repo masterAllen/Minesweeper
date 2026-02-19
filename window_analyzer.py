@@ -108,7 +108,7 @@ class WindowAnalyzer:
             self.table_left_top[1]:self.table_right_bottom[1], 
             self.table_left_top[0]:self.table_right_bottom[0]
         ]
-        cv2.imwrite("table.png", tableimg)
+        # cv2.imwrite("table.png", tableimg)
 
         '''
         边界提取，本来是打算做直线检测等复杂算法，但是想想算了...
