@@ -15,6 +15,7 @@ import math
 import collections
 import time
 import threading
+import concurrent.futures
 try:
     import keyboard
     KEYBOARD_AVAILABLE = True
@@ -75,7 +76,8 @@ def union_constraints(A: Constraint, B: Constraint) -> Constraint:
     return A | B
 
 class Weeper:
-    def __init__(self, table: np.ndarray, mine_total: int, is_Q: bool = False, is_C: bool = False) -> None:
+    def __init__(self, table: np.ndarray, mine_total: int, \
+        is_Q: bool, is_C: bool, is_T: bool, is_D: bool) -> None:
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
@@ -83,6 +85,8 @@ class Weeper:
 
         self.is_Q = is_Q
         self.is_C = is_C
+        self.is_T = is_T
+        self.is_D = is_D
         
         if table is None:
             window_title = "Minesweeper Variants"
@@ -160,6 +164,22 @@ class Weeper:
 
         return is_update, new_min, new_max
 
+    def _get_four_directions(self, table: np.ndarray, coordinate: tuple[int, int]) -> list[tuple[int, int]]:
+        """
+        返回四个方向的坐标：上下左右
+        """
+        directions = [
+            (-1, 0), (0, 1), (1, 0), (0, -1)    # 左、右
+        ]
+
+        results = []
+        for dx, dy in directions:
+            coord = (coordinate[0] + dx, coordinate[1] + dy)
+            if coord[0] < 0 or coord[0] >= table.shape[0] or coord[1] < 0 or coord[1] >= table.shape[1]:
+                continue
+            results.append(coord)
+        return results
+
     def _get_eight_directions(self, table: np.ndarray, coordinate: tuple[int, int]) -> list[tuple[int, int]]:
         """
         返回八连通的坐标：上下左右 + 四个对角线
@@ -170,19 +190,22 @@ class Weeper:
             (1, -1),  (1, 0),  (1, 1)     # 下左、下、下右
         ]
 
+        results = []
         for dx, dy in directions:
             coord = (coordinate[0] + dx, coordinate[1] + dy)
             if coord[0] < 0 or coord[0] >= table.shape[0] or coord[1] < 0 or coord[1] >= table.shape[1]:
                 continue
-            yield coord
+            results.append(coord)
+        return results
     
-    def _bfs_connected_region(self, table: np.ndarray, start_coords: list, 
+    def _bfs_connected_region(self, table: np.ndarray, start_coords: list, connected_type: int,
                               allowed_cell_types: set) -> set:
         """
-        使用 BFS 找到从起始坐标开始的八连通区域
+        使用 BFS 找到从起始坐标开始的四/八连通区域
         
         Args:
             table: 全局表格
+            connected_type: 4 - 四连通，8 - 八连通
             start_coords: 起始坐标列表（可以是单个坐标的列表）
             allowed_cell_types: 允许通过的格子类型集合，例如 {'mine', 'unknown'}
         
@@ -202,7 +225,12 @@ class Weeper:
             current = queue.pop(0)
             
             # 检查八个方向的邻居
-            for neighbor in self._get_eight_directions(table, current):
+            if connected_type == 8:
+                neighbors = self._get_eight_directions(table, current)
+            elif connected_type == 4:
+                neighbors = self._get_four_directions(table, current)
+
+            for neighbor in neighbors:
                 # 如果已经访问过，跳过
                 if neighbor in connected_region:
                     continue
@@ -215,7 +243,7 @@ class Weeper:
         
         return connected_region
     
-    def _find_all_connected_regions(self, table: np.ndarray, target_coords: list,
+    def _find_all_connected_regions(self, table: np.ndarray, target_coords: list, connected_type: int,
                                     allowed_cell_types: set) -> list:
         """
         找到所有分离的连通区域
@@ -240,7 +268,7 @@ class Weeper:
             
             # 找到从当前坐标开始的连通区域
             connected_region = self._bfs_connected_region(
-                table, [start_coord], 
+                table, [start_coord], connected_type,
                 allowed_cell_types=allowed_cell_types
             )
             
@@ -250,6 +278,32 @@ class Weeper:
                 visited.update(connected_region)
         
         return connected_regions
+
+    def is_three_not_connected(self, table: np.ndarray) -> bool:
+        """
+        检查当前雷的坐标是否有三连，如果有则返回 False
+        四个方向：水平、垂直、左上-右下对角线、右上-左下对角线
+        """
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        
+        for i in range(table.shape[0]):
+            for j in range(table.shape[1]):
+                if table[i, j] != 'mine':
+                    continue
+                
+                for di, dj in directions:
+                    # 检查当前点沿着 direction 方向是否有三连雷
+                    count = 1
+                    for step in [1, 2]:
+                        ni, nj = i + di * step, j + dj * step
+                        if 0 <= ni < table.shape[0] and 0 <= nj < table.shape[1]:
+                            if table[ni, nj] == 'mine':
+                                count += 1
+                    if count >= 3:
+                        return False
+        
+        return True
+        
     
     def is_eight_connected(self, table: np.ndarray) -> bool:
         """
@@ -262,10 +316,6 @@ class Weeper:
         Returns:
             True 如果所有雷八连通，False 否则
         """
-        # 只有 [C] 的规则才需要检查八连通
-        if not self.is_C:
-            return True
-
         mine_coordinates = []
         for i in range(table.shape[0]):
             for j in range(table.shape[1]):
@@ -285,6 +335,17 @@ class Weeper:
         mine_set = set(mine_coordinates)
         visited_mines = connected_region & mine_set
         return len(visited_mines) == len(mine_coordinates)
+
+    def check_rules(self, table: np.ndarray) -> bool:
+        """
+        检查当前表格是否符合所有规则
+        """
+        is_ok = True
+        if self.is_C:
+            is_ok = is_ok and self.is_eight_connected(table)
+        if self.is_T:
+            is_ok = is_ok and self.is_three_not_connected(table)
+        return is_ok
 
     '''
     constraints:
@@ -338,7 +399,7 @@ class Weeper:
                 
                 # 找到所有分离的 mine 连通区域（只考虑 mine，不考虑 unknown）
                 connected_regions = self._find_all_connected_regions(
-                    table, mine_coordinates,
+                    table, mine_coordinates, connected_type=8,
                     allowed_cell_types={'mine'}  # 只允许通过 mine
                 )
 
@@ -369,7 +430,7 @@ class Weeper:
 
                 # 使用通用函数找到所有与 mine 八连通的区域（包括可以连接的 unknown）
                 connected_regions = self._find_all_connected_regions(
-                    table, [mine_coordinates[0]], 
+                    table, [mine_coordinates[0]], connected_type=8,
                     allowed_cell_types={'mine', 'unknown'}
                 )
 
@@ -392,6 +453,56 @@ class Weeper:
                         constraints[safe_constraint] = (new_min, new_max)
             
             # 求解所有 mine 的联通区域，然后每个联通区域的四周要有雷
+
+        # [T] 的规则，雷不能构成三连
+        # 对于每个三连区域（mine + unknown 组合），unknown 中最多有 2 - mine_count 个雷
+        if self.is_T:
+            directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+            seen_triplets = set()  # 避免重复处理相同的三连区域
+            
+            for i in range(table.shape[0]):
+                for j in range(table.shape[1]):
+                    for di, dj in directions:
+                        # 获取三连区域的三个坐标
+                        triplet = [(i + di * k, j + dj * k) for k in range(3)]
+                        
+                        # 检查是否越界
+                        if not all(0 <= x < table.shape[0] and 0 <= y < table.shape[1] for x, y in triplet):
+                            continue
+                        
+                        # 用排序后的元组作为 key，避免重复
+                        triplet_key = tuple(sorted(triplet))
+                        if triplet_key in seen_triplets:
+                            continue
+                        seen_triplets.add(triplet_key)
+                        
+                        # 统计三连区域中的 mine 和 unknown
+                        mine_count = 0
+                        unknowns = []
+                        has_known = False
+                        for x, y in triplet:
+                            if table[x, y] == 'mine':
+                                mine_count += 1
+                            elif table[x, y] == 'unknown':
+                                unknowns.append((x, y))
+                            else:
+                                # 如果是已知格（数字），那这个三连区域不可能三连雷
+                                has_known = True
+                                break
+                        
+                        # 如果有已知格，跳过这个三连区域
+                        if has_known:
+                            continue
+                        
+                        # 如果有 unknown，添加约束：最多 2 - mine_count 个雷
+                        if len(unknowns) > 0:
+                            max_mines = 2 - mine_count
+                            if max_mines < len(unknowns):  # 只有约束有意义时才添加
+                                constraint = Constraint(unknowns)
+                                is_update, new_min, new_max = self._update_constraints(
+                                    constraints, constraint, 0, max_mines)
+                                if is_update:
+                                    constraints[constraint] = (new_min, new_max)
 
 
         # 全局数量也有一个约束；不过为了防止加入之后，导致 constraints 过多，这里做个判断
@@ -530,7 +641,7 @@ class Weeper:
 
         for _ in range(try_count):
             try:
-                assert(self.is_eight_connected(self.table))
+                assert(self.check_rules(self.table))
                 constraints = self.create_table_constraints(self.table, self.mine_count)
             except:
                 return False
@@ -581,8 +692,8 @@ class Weeper:
         if self.mine_count > self.unknown_count:
             raise ValueError(f'mine_count > unknown_count: {self.mine_count} > {self.unknown_count}')
 
-        if not self.is_eight_connected(self.table):
-            raise ValueError(f'is_eight_connected 失败')
+        if not self.check_rules(self.table):
+            raise ValueError(f'check_rules 失败')
 
         # 退出条件：雷 = 0，unkown = 0
         if self.mine_count == 0 and self.unknown_count == 0:
@@ -631,7 +742,6 @@ class Weeper:
                 mine_marked.update(new_mine_marked)
                 safe_marked.update(new_safe_marked)
 
-
             # 4. 如果还是不行，那么就要回溯全局求解了
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
                 # V1: 我们直接遍历所有的未知点，为了加速，我们先粗略计算每个坐标是雷的概率
@@ -664,7 +774,7 @@ class Weeper:
                         combinations.append(tuple(marked_mine_coordinates))
                     
                     # 打乱顺序
-                    # random.shuffle(combinations)
+                    random.shuffle(combinations)
 
                     # 所有 True 的结果中的可行解
                     common_mine_coordinates = set()
@@ -766,7 +876,7 @@ class Weeper:
 
             self.refresh_table(refresh_by_screenshot=False)
             if self.mine_count == 0 and self.unknown_count == 0:
-                return self.is_eight_connected(self.table)
+                return self.check_rules(self.table)
 
             if len(safe_marked) > 0:
                 self.refresh_table(refresh_by_screenshot=True)
@@ -796,7 +906,7 @@ class Weeper:
         if self.mine_count > self.unknown_count:
             return False
 
-        if not self.is_eight_connected(self.table):
+        if not self.check_rules(self.table):
             return False
 
         # 退出条件：雷 = 0，unkown = 0
@@ -947,7 +1057,7 @@ class Weeper:
 
             self.refresh_table(refresh_by_screenshot=False)
             if self.mine_count == 0 and self.unknown_count == 0:
-                return self.is_eight_connected(self.table)
+                return self.check_rules(self.table)
 
             return self.solve_by_backtracking(depth=depth)
         except Exception as e:
@@ -998,25 +1108,6 @@ class Weeper:
 
         return (new_mine_marked, new_safe_marked)
                 
-
-    def solve_by_intersect(self, constraints: dict):
-        new_mine_marked = set()
-        new_safe_marked = set()
-
-        # for now_coordinates, now_mine_count in constraints.items():
-        #     for other_coordinates, other_mine_count in constraints.items():
-        #         new_coordinates = other_coordinates - now_coordinates
-        #         new_mine_count = other_mine_count - now_mine_count
-
-        #         # 这里不应该等于 0，等于 0 意味着 []，即两个集合相等
-        #         if len(new_coordinates) == new_mine_count and new_mine_count > 0:
-        #             for coordinate in new_coordinates:
-        #                 new_mine_marked.add(coordinate)
-
-        #             # 这里提前返回，因为两重循环复杂度太高了
-        #             return new_mine_marked, new_safe_marked
-        
-        return new_mine_marked, new_safe_marked
 
     def solve_by_force(self, constraints: dict, thresh: int, max_count: int = None):
         scores = []
@@ -1137,9 +1228,11 @@ class Weeper:
 
 if __name__ == "__main__":
     is_Q = False
-    is_C = True
-    weeper = Weeper(None, mine_total=26, is_Q=is_Q, is_C=is_C)
-    weeper.solve(200)
+    is_C = False
+    is_T = False
+    is_D = True
+    weeper = Weeper(None, mine_total=26, is_Q=is_Q, is_C=is_C, is_T=is_T, is_D=is_D)
+    weeper.solve(10)
     weeper.window_analyzer.click_goto_next_level()
 
     # table = np.array([
