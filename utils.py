@@ -1,4 +1,5 @@
 import numpy as np
+from constraint import Constraint, ConstraintsDict
 
 def get_eight_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -> list[tuple[int, int]]:
     """
@@ -111,3 +112,132 @@ def find_all_connected_regions(table: np.ndarray, target_coords: list, connected
             visited.update(connected_region)
     
     return connected_regions
+
+
+def get_cost(table: np.ndarray, point1: tuple, point2: tuple, connected_type: int = 4) -> int:
+    """
+    计算 point1 -> point2 的最短步数，中间只能经过 unknown，用 BFS 计算
+    
+    Args:
+        table: 表格
+        point1: 起点坐标
+        point2: 终点坐标
+        connected_type: 4 - 四连通，8 - 八连通
+    
+    Returns:
+        最短步数，如果无法到达返回 -1
+    """
+    if point1 == point2:
+        return 0
+    
+    # BFS 求最短路径
+    queue = [(point1, 0)]  # (坐标, 步数)
+    visited = {point1}
+    
+    while queue:
+        current, steps = queue.pop(0)
+        
+        # 获取邻居
+        if connected_type == 8:
+            neighbors = get_eight_directions(current, table.shape)
+        else:
+            neighbors = get_four_directions(current, table.shape)
+        
+        for neighbor in neighbors:
+            if neighbor in visited:
+                continue
+            
+            # 到达终点
+            if neighbor == point2:
+                return steps + 1
+            
+            # 只能经过 unknown
+            if table[neighbor[0], neighbor[1]] == 'unknown':
+                visited.add(neighbor)
+                queue.append((neighbor, steps + 1))
+    
+    # 无法到达
+    return -1
+
+def minenum_in_M(coordinate: tuple[int, int], shape: tuple[int, int]) -> int:
+    """
+    计算 M 规则下，某个坐标的雷数
+    """
+    if (coordinate[0] + coordinate[1]) % 2 == 0:
+        return 1
+    return 2
+
+
+def refresh_constraints(constraints: ConstraintsDict, new_constraints: ConstraintsDict) -> ConstraintsDict:
+
+    def two_constraints(A: Constraint, B: Constraint) -> tuple[Constraint, Constraint, Constraint]:
+        """
+        返回 A_only, B_only, A_and_B
+        """
+        A_only = A - B
+        B_only = B - A
+        A_and_B = A & B
+        return A_only, B_only, A_and_B
+
+
+    constraints_bak = constraints.copy()
+
+    for A, (minA, maxA) in constraints_bak.items():
+        for B, (minB, maxB) in new_constraints.items():
+            A_only, B_only, A_and_B = two_constraints(A, B)
+
+            # A_and_B 范围
+            z_min = max(0, minA - len(A_only), minB - len(B_only))
+            z_max = min(maxA, maxB, len(A_and_B))
+
+            # if z_min > z_max:
+            # print(A, minA, maxA)
+            # print(B, minB, maxB)
+            # print(A_and_B, z_min, z_max)
+            # print('--------------------------------------------')
+
+            try:
+                constraints[A_and_B] = (z_min, z_max)
+            except:
+                print(f'A: {A}, minA: {minA}, maxA: {maxA}')
+                print(f'B: {B}, minB: {minB}, maxB: {maxB}')
+                print(f'A_and_B: {A_and_B}, z_min: {z_min}, z_max: {z_max}')
+                print('--------------------------------------------')
+                raise ValueError(f'z_min > z_max: {z_min} > {z_max}')
+
+
+            # A_only, B_only 范围
+            x_min = max(0, minA - z_max)
+            x_max = min(len(A_only), maxA - z_min)
+
+            # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
+            # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
+            # print(f'A_only: {A_only}, x_min: {x_min}, x_max: {x_max}')
+            # print('--------------------------------------------')
+            try:
+                constraints[A_only] = (x_min, x_max)
+            except:
+                raise ValueError(f'x_min > x_max: {x_min} > {x_max}')
+
+            y_min = max(0, minB - z_max)
+            y_max = min(len(B_only), maxB - z_min)
+            # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
+            # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
+            # print(f'B_only: {B_only}, y_min: {y_min}, y_max: {y_max}')
+            # print('--------------------------------------------')
+            try:
+                constraints[B_only] = (y_min, y_max)
+            except:
+                raise ValueError(f'y_min > y_max: {y_min} > {y_max}')
+
+    # 找出新增的 constraints
+    return_new_constraints = ConstraintsDict()
+    for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+        if coordinates not in constraints_bak:
+            return_new_constraints[coordinates] = (min_mine_count, max_mine_count)
+        else:
+            old_min, old_max = constraints_bak[coordinates]
+            if old_min != min_mine_count or old_max != max_mine_count:
+                return_new_constraints[coordinates] = (min_mine_count, max_mine_count)
+
+    return return_new_constraints

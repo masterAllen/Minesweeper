@@ -26,5 +26,19 @@ def create_constraints(table: np.ndarray) -> dict:
     return results
 
 def is_legal(table: np.ndarray) -> bool:
-    # TODO: 普通规则就默认是合法的
+    for i in range(table.shape[0]):
+        for j in range(table.shape[1]):
+            if table[i, j].isdigit():
+                found_mines = 0
+                found_unknowns = 0
+                for neighbor in utils.get_eight_directions((i, j), table.shape):
+                    if table[neighbor] == 'mine':
+                        found_mines += 1
+                    if table[neighbor] == 'unknown':
+                        found_unknowns += 1
+
+                if int(table[i, j]) < found_mines:
+                    return False
+                if int(table[i, j]) > found_mines + found_unknowns:
+                    return False
     return True

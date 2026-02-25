@@ -159,26 +159,36 @@ class WindowAnalyzer:
     def _check_cell_data(self, cell_img: np.ndarray) -> str:
         assert(len(cell_img.shape) == 3)
 
-        # 检查是否是空，判断：全部为黑
-        if np.all(cell_img[:, :, 1] < 32):
-            return 'unknown'
+        # # 检查是否是空，判断：全部为黑
+        # if np.all(cell_img[:, :, 1] < 32):
+        #     return 'unknown'
+        # if np.all((70 < cell_img[:, :, 1]) & (cell_img[:, :, 1] < 82)):
+        #     return 'unknown'
 
         # 遍历 Template
         is_first = True
-        best, best_score = None, -1
+        best, best_score = None, 1e9
         for fname in os.listdir('templates'):
             template = cv2.imread(f'templates/{fname}')
             if is_first:
                 matched = cv2.resize(cell_img, (template.shape[1], template.shape[0]))
-                is_first = False
+                # is_first = False
 
-            inter = np.logical_and(matched, template).sum()
-            union = np.logical_or(matched, template).sum()
-            score = inter / union
-            if score > best_score:
+            # inter = np.logical_and(matched, template).sum()
+            # union = np.logical_or(matched, template).sum()
+            # score = inter / union
+            # if score > best_score:
+            #     best, best_score = fname, score
+
+            diff = matched.astype(float) - template.astype(float)
+            score = np.mean(diff**2)
+            # print(f'{fname}: {score}')
+            if score < best_score:
                 best, best_score = fname, score
 
-        return best[:best.rfind('.')]
+        name = best[:best.rfind('.')]
+        name = name.split('_')[1]
+        return name
 
         # # 检查是否是空，判断：全部为黑
         # if np.all(cell_img[:, :, 1] < 32):
@@ -222,7 +232,7 @@ if __name__ == "__main__":
     
     analyzer = WindowAnalyzer(window_title)
     # analyzer.analyze_window_by_title()
-    # screenshot = analyzer.capture_window_screenshot()
-    # tableimg = analyzer.parse_img_to_table(screenshot)
-    analyzer.click_goto_next_level()
+    screenshot = analyzer.capture_window_screenshot()
+    tableimg = analyzer.parse_img_to_table(screenshot)
+    # analyzer.click_goto_next_level()
     # analyzer.click_skip_this_level()

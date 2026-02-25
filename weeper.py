@@ -8,7 +8,6 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 import random
 import numpy as np
-from typing import Iterator
 from window_analyzer import WindowAnalyzer
 import itertools
 import math
@@ -24,63 +23,14 @@ except ImportError:
     print("警告: keyboard 库未安装，空格键退出功能不可用。请运行: pip install keyboard")
 
 # 导入规则模块
-from rules import V, Q, C, T, O
-
-class Constraint:
-    def __init__(self, coordinates: list):
-        # self.coordinates = tuple(coordinates)
-        # 按照顺序排序
-        coordinates_sorted = sorted(coordinates, key=lambda x: (x[0], x[1]))
-        self.coordinates = tuple(coordinates_sorted)
-
-    def __repr__(self) -> str:
-        return f'{[x for x in self.coordinates]}'
-
-    def __iter__(self) -> Iterator[tuple[int, int]]:
-        return iter(self.coordinates)
-
-    def __sub__(self, other: 'Constraint') -> 'Constraint':
-        my_coordinates_set = set(self.coordinates)
-        other_coordinates_set = set(other.coordinates)
-        return Constraint(list(my_coordinates_set - other_coordinates_set))
-
-    def __and__(self, other: 'Constraint') -> 'Constraint':
-        my_coordinates_set = set(self.coordinates)
-        other_coordinates_set = set(other.coordinates)
-        return Constraint(list(my_coordinates_set.intersection(other_coordinates_set)))
-
-    def __or__(self, other: 'Constraint') -> 'Constraint':
-        my_coordinates_set = set(self.coordinates)
-        other_coordinates_set = set(other.coordinates)
-        return Constraint(list(my_coordinates_set.union(other_coordinates_set)))
-
-    def is_subset(self, other: 'Constraint') -> bool:
-        return set(self.coordinates).issubset(set(other.coordinates))
-
-    def __len__(self) -> int:
-        return len(self.coordinates)
-
-    def __hash__(self) -> int:
-        return hash(self.coordinates)
-
-    def __eq__(self, other: 'Constraint') -> bool:
-        return set(self.coordinates) == set(other.coordinates)
-
-def two_constraints(A: Constraint, B: Constraint) -> tuple[Constraint, Constraint, Constraint]:
-    """
-    返回 A_only, B_only, A_and_B
-    """
-    A_only = A - B
-    B_only = B - A
-    A_and_B = A & B
-    return A_only, B_only, A_and_B
-
-def union_constraints(A: Constraint, B: Constraint) -> Constraint:
-    return A | B
+from rules import V, Q, C, T, O, D, S, B, M
+from constraint import Constraint, ConstraintsDict
+import utils
 
 class Weeper:
     def __init__(self, table: np.ndarray, mine_total: int, is_V: bool = True, \
-        is_Q: bool = False, is_C: bool = False, is_T: bool = False, is_O: bool = False) -> None:
+        is_Q: bool = False, is_C: bool = False, is_T: bool = False, is_O: bool = False, is_D: bool = False, \
+        is_S: bool = False, is_B: bool = False, is_M: bool = False) -> None:
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
@@ -91,6 +41,10 @@ class Weeper:
         self.is_C = is_C
         self.is_T = is_T
         self.is_O = is_O
+        self.is_D = is_D
+        self.is_S = is_S
+        self.is_B = is_B
+        self.is_M = is_M
         
         if table is None:
             window_title = "Minesweeper Variants"
@@ -99,7 +53,7 @@ class Weeper:
         # 启动键盘监听线程
         if KEYBOARD_AVAILABLE:
             self._start_keyboard_listener()
-    
+
     def _start_keyboard_listener(self):
         """启动键盘监听线程，监听空格键，按下时直接强制退出"""
         def listen_keyboard():
@@ -143,38 +97,6 @@ class Weeper:
             print('|')
         print('-' * (table.shape[1] * 4 + 1))
 
-    def _update_constraints(self, constraints: dict, coordinates: Constraint, min_mine_count: int, max_mine_count: int) -> tuple[bool, int, int]:
-        '''
-        更新 coordinates 的最大最小雷数量（coordinates 在坐标组合）
-        '''
-        if len(coordinates) == 0:
-            return False, 0, 0
-
-        if min_mine_count > max_mine_count:
-            # print(f'min_mine_count > max_mine_count: {min_mine_count} > {max_mine_count}')
-            raise ValueError(f'min_mine_count > max_mine_count: {min_mine_count} > {max_mine_count}')
-        if len(coordinates) < min_mine_count:
-            raise ValueError(f'min_mine_count > len(coordinates): {min_mine_count} > {len(coordinates)}')
-
-        is_update = False
-        new_min, new_max = 0, 0
-        if coordinates in constraints:
-            if min_mine_count > constraints[coordinates][1]:
-                raise ValueError(f'min_mine_count > old_max_mine_count: {min_mine_count} > {constraints[coordinates][1]}')
-            if max_mine_count < constraints[coordinates][0]:
-                raise ValueError(f'max_mine_count < old_min_mine_count: {max_mine_count} < {constraints[coordinates][0]}')
-
-            if min_mine_count > constraints[coordinates][0] or max_mine_count < constraints[coordinates][1]:
-                new_min = max(min_mine_count, constraints[coordinates][0])
-                new_max = min(max_mine_count, constraints[coordinates][1])
-                is_update = True
-        else:
-            new_min = min_mine_count
-            new_max = max_mine_count
-            is_update = True
-
-        return is_update, new_min, new_max
-
     def check_rules(self, table: np.ndarray) -> bool:
         """
         检查当前表格是否符合所有规则
@@ -189,6 +111,15 @@ class Weeper:
             return False
         if self.is_O and not O.is_legal(table, self.mine_count, self):
             return False
+        if self.is_D and not D.is_legal(table, self):
+            return False
+        if self.is_S and not S.is_legal(table, self.mine_count, self.mine_total, self):
+            return False
+        if self.is_B and not B.is_legal(table, self.mine_total):
+            return False
+        if self.is_M and not M.is_legal(table):
+            return False
+        
         return True
 
     '''
@@ -196,8 +127,8 @@ class Weeper:
         k --> 坐标集合
         v --> 雷的数量（最小值、最大值）
     '''
-    def create_table_constraints(self, table: np.ndarray, mine_count: int) -> dict:
-        constraints = dict()
+    def create_table_constraints(self, table: np.ndarray, mine_count: int) -> ConstraintsDict:
+        constraints = ConstraintsDict()
 
         if self.mine_count == 0:
             self.check_rules(table)
@@ -214,17 +145,22 @@ class Weeper:
         if self.is_T:
             rule_constraints_list.append(T.create_constraints(table))
         if self.is_O:
-            rule_constraints_list.append(O.create_constraints(table))
+            rule_constraints_list.append(O.create_constraints(table, mine_count))
+        if self.is_D:
+            rule_constraints_list.append(D.create_constraints(table))
+        if self.is_S:
+            rule_constraints_list.append(S.create_constraints(table, mine_count))
+        if self.is_B:
+            rule_constraints_list.append(B.create_constraints(table, self.mine_total))
+        if self.is_M:
+            rule_constraints_list.append(M.create_constraints(table))
 
         # 合并所有规则的约束
         for rule_constraints in rule_constraints_list:
             if rule_constraints is None:
                 continue
             for coords, (min_val, max_val) in rule_constraints.items():
-                constraint = Constraint(coords)
-                is_update, new_min, new_max = self._update_constraints(constraints, constraint, min_val, max_val)
-                if is_update:
-                    constraints[constraint] = (new_min, new_max)
+                constraints[coords] = (min_val, max_val)
 
         # 全局数量也有一个约束；不过为了防止加入之后，导致 constraints 过多，这里做个判断
         unknown_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'unknown']
@@ -237,100 +173,21 @@ class Weeper:
                 is_add = True
 
         if is_add:
-            is_update, new_min, new_max = self._update_constraints(constraints, Constraint(unknown_coordinates), self.mine_count, self.mine_count)
-            if is_update:
-                constraints[Constraint(unknown_coordinates)] = (new_min, new_max)
+            constraints[unknown_coordinates] = (self.mine_count, self.mine_count)
 
         return constraints
 
 
-    def refresh_constraints(self, constraints: dict, new_constraints: dict, thresh: int) -> dict:
+    def refresh_constraints(self, constraints: ConstraintsDict, new_constraints: ConstraintsDict, thresh: int) -> ConstraintsDict:
         # print(f'--> Constraints NUM: {len(constraints)}')
         if len(constraints) > thresh:
-            return {}
+            return ConstraintsDict()
 
-        # 把其中无用的 constraints 去掉
-        can_remove_keys = []
-        for coordinates, (min_mine_count, max_mine_count) in constraints.items():
-            if len(coordinates) == max_mine_count and min_mine_count == 0:
-                can_remove_keys.append(coordinates)
-        for key in can_remove_keys:
-            del constraints[key]
+        return_new_constraints = utils.refresh_constraints(constraints, new_constraints)
 
-        return_new_constraints = {}
-        for A, (minA, maxA) in constraints.items():
-            for B, (minB, maxB) in new_constraints.items():
-                A_only, B_only, A_and_B = two_constraints(A, B)
-
-                # A_and_B 范围
-                z_min = max(0, minA - len(A_only), minB - len(B_only))
-                z_max = min(maxA, maxB, len(A_and_B))
-
-                # if z_min > z_max:
-                #     print(A, minA, maxA)
-                #     print(B, minB, maxB)
-                #     print(A_and_B, z_min, z_max)
-                #     print('--------------------------------------------')
-
-                try:
-                    is_update, new_min, new_max = self._update_constraints(constraints, A_and_B, z_min, z_max)
-                    if is_update:
-                        is_update, new_min, new_max = self._update_constraints(return_new_constraints, A_and_B, new_min, new_max)
-                except:
-                    # self.print_table(self.table)
-                    # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
-                    # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
-                    # print(f'A_and_B: {A_and_B}, z_min: {z_min}, z_max: {z_max}')
-                    # print('--------------------------------------------')
-                    # exit(0)
-                    raise ValueError(f'z_min > z_max: {z_min} > {z_max}')
-
-                if is_update:
-                    # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
-                    # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
-                    # print(f'A_and_B: {A_and_B}, z_min: {z_min}, z_max: {z_max}')
-                    # print('--------------------------------------------')
-                    return_new_constraints[A_and_B] = (new_min, new_max)
-
-                # A_only, B_only 范围
-                x_min = max(0, minA - z_max)
-                x_max = min(len(A_only), maxA - z_min)
-                try:
-                    is_update, new_min, new_max = self._update_constraints(constraints, A_only, x_min, x_max)
-                    if is_update:
-                        is_update, new_min, new_max = self._update_constraints(return_new_constraints, A_only, new_min, new_max)
-                except:
-                    raise ValueError(f'x_min > x_max: {x_min} > {x_max}')
-
-                if is_update:
-                    return_new_constraints[A_only] = (new_min, new_max)
-
-                y_min = max(0, minB - z_max)
-                y_max = min(len(B_only), maxB - z_min)
-                try:
-                    is_update, new_min, new_max = self._update_constraints(constraints, B_only, y_min, y_max)
-                    if is_update:
-                        is_update, new_min, new_max = self._update_constraints(return_new_constraints, B_only, new_min, new_max)
-                except:
-                    raise ValueError(f'y_min > y_max: {y_min} > {y_max}')
-
-                if is_update:
-                    # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
-                    # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
-                    # print(f'B_only: {B_only}, y_min: {y_min}, y_max: {y_max}')
-                    # print('--------------------------------------------')
-                    return_new_constraints[B_only] = (new_min, new_max)
-
-        # 把其中无用的 constraints 去掉
-        can_remove_keys = []
-        for coordinates, (min_mine_count, max_mine_count) in return_new_constraints.items():
-            if len(coordinates) == max_mine_count and min_mine_count == 0:
-                can_remove_keys.append(coordinates)
-        for key in can_remove_keys:
-            del return_new_constraints[key]
-
-        for key, value in return_new_constraints.items():
-            constraints[key] = value
+        # 检查各个规则
+        if self.is_D:
+            assert(D.check_constraints(constraints))
 
         return return_new_constraints
 
@@ -339,15 +196,17 @@ class Weeper:
         self.refresh_table(refresh_by_screenshot=True)
         # self.mine_count = self.mine_total
         
-    def deduce_table_with_assumptions(self, try_count: int = 5):
+    def deduce_table_with_assumptions(self, depth: int, max_depth: int, old_constraints: ConstraintsDict, try_count: int = 5):
         # 刷新一次 Table
         self.refresh_table(refresh_by_screenshot=False)
 
         for _ in range(try_count):
             try:
-                assert(self.check_rules(self.table))
                 constraints = self.create_table_constraints(self.table, self.mine_count)
             except:
+                # import traceback
+                # traceback.print_exc()
+                # print(f'depth = {depth}, create_constraints error')
                 return False
             mine_marked, safe_marked = set(), set()
 
@@ -358,25 +217,65 @@ class Weeper:
                     new_constraints = self.refresh_constraints(constraints, new_constraints, 600)
                     if len(new_constraints) == 0:
                         break
+            except:
+                # 发生错误，那么就说明这个假设不应该存在，是错误
+                # import traceback
+                # traceback.print_exc()
+                # print('refresh_constraints error')
+                return False
 
+            try:
                 # 1. 检查是否有哪个数字可以直接告诉我们信息
                 new_mine_marked, new_safe_marked = self.solve_by_ensure(constraints)
                 mine_marked.update(new_mine_marked)
                 safe_marked.update(new_safe_marked)
+
+                # 不进行点击，也不进行刷新。只是更新是否有雷或者是否安全
+                for coordinate in new_mine_marked:
+                    self.table[coordinate[0], coordinate[1]] = 'mine'
+
+                # 由于我们是在推测，所以只知道这里不是雷，没办法真正鼠标点击它查看具体的数字，所以这里标记为 question
+                for coordinate in new_safe_marked:
+                    self.table[coordinate[0], coordinate[1]] = 'question'
+
+                self.refresh_table(refresh_by_screenshot=False)
+
+                assert(self.check_rules(self.table))
+
             except:
-                # 发生错误，那么就说明这个假设不应该存在，是错误
+                # import traceback
+                # traceback.print_exc()
+                # print('solve_by_ensure_with_rules error')
                 return False
 
-            # 不进行点击，也不进行刷新。只是更新是否有雷或者是否安全
-            for coordinate in mine_marked:
-                self.table[coordinate[0], coordinate[1]] = 'mine'
+            try:
+                # 如果没找到，也提前终止
+                if len(mine_marked) == 0 and len(safe_marked) == 0:
+                    # 2. 再次进行 solve_by_force，此时数量可以少一点
+                    try:
+                        new_mine_marked, new_safe_marked = self.solve_by_force(depth+1, max_depth, old_constraints, constraints, 9, 100)
+                    except:
+                        return False
+                    mine_marked.update(new_mine_marked)
+                    safe_marked.update(new_safe_marked)
 
-            # 由于我们是在推测，所以只知道这里不是雷，没办法真正鼠标点击它查看具体的数字，所以这里标记为 question
-            for coordinate in safe_marked:
-                self.table[coordinate[0], coordinate[1]] = 'question'
+                    # 不进行点击，也不进行刷新。只是更新是否有雷或者是否安全
+                    for coordinate in new_mine_marked:
+                        self.table[coordinate[0], coordinate[1]] = 'mine'
 
-            self.mine_count -= len(mine_marked)
-            self.unknown_count -= (len(safe_marked) + len(mine_marked))
+                    # 由于我们是在推测，所以只知道这里不是雷，没办法真正鼠标点击它查看具体的数字，所以这里标记为 question
+                    for coordinate in new_safe_marked:
+                        self.table[coordinate[0], coordinate[1]] = 'question'
+
+                    self.refresh_table(refresh_by_screenshot=False)
+
+                    assert(self.check_rules(self.table))
+            
+            except:
+                # import traceback
+                # traceback.print_exc()
+                # print('solve_by_force error')
+                return False
 
             # 退出条件：雷 = 0，unkown = 0
             if self.mine_count == 0 and self.unknown_count == 0:
@@ -417,7 +316,7 @@ class Weeper:
                 try:
                     new_mine_marked, new_safe_marked = self.solve_by_ensure(constraints)
                 except Exception as e:
-                    raise ValueError(f'solve_by_ensure 失败')
+                    raise ValueError(f'solve_by_ensure_with_rules 失败')
 
                 mine_marked.update(new_mine_marked)
                 safe_marked.update(new_safe_marked)
@@ -433,39 +332,58 @@ class Weeper:
                         break
                     new_constraints = self.refresh_constraints(constraints, new_constraints, 500)
                 except:
+                    import traceback
+                    traceback.print_exc()
+                    print('refresh_constraints 出错')
                     return False
 
                 if len(new_constraints) == 0:
                     break
 
-
-            # 3. 如果不可以，那就小范围穷举，检查是否有的格子一定是雷或者一定是安全的
+            # 2. 如果不可以，那就小范围穷举，检查是否有的格子一定是雷或者一定是安全的
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
-                new_mine_marked, new_safe_marked = self.solve_by_force(constraints, 10, 100)
+                new_mine_marked, new_safe_marked = self.solve_by_force(0, 0, ConstraintsDict(), constraints, 61, 100)
                 print(f'====> 根据方法二确定：{new_mine_marked} {new_safe_marked}')
                 mine_marked.update(new_mine_marked)
                 safe_marked.update(new_safe_marked)
+
+            # 3. 更进一步：穷举的时候再次穷举
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                new_mine_marked, new_safe_marked = self.solve_by_force(0, 1, ConstraintsDict(), constraints, 61, 100)
+                print(f'====> 根据方法二（穷举+再次穷举）确定：{new_mine_marked} {new_safe_marked}')
+                mine_marked.update(new_mine_marked)
+                safe_marked.update(new_safe_marked)
+
+            # 3. 如果不可以，那么尝试用暴力 + rules 去求解
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                s_mine_marked, s_safe_marked = self.solve_by_rules(constraints)
+                print(f'====> 根据方法三（rules）确定：{s_mine_marked} {s_safe_marked}')
+                mine_marked.update(s_mine_marked)
+                safe_marked.update(s_safe_marked)
+
 
             # 4. 如果还是不行，那么就要回溯全局求解了
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
                 # V1: 我们直接遍历所有的未知点，为了加速，我们先粗略计算每个坐标是雷的概率
                 # V2: 遍历所有的组合，如果某个组合中都能 continue 才进行下一个组合
+                self.refresh_table(refresh_by_screenshot=True)
 
                 scores = []
                 coordinates_list = []
                 # 只选择确定雷数的
                 for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+                    # if max_mine_count == min_mine_count and len(coordinates) < 9:
                     if max_mine_count == min_mine_count:
                         score = math.comb(len(coordinates), min_mine_count)
                         scores.append(score)
                         coordinates_list.append(coordinates)
 
-                if len(coordinates_list) == 0:
-                    for coordinates, (min_mine_count, max_mine_count) in constraints.items():
-                        if max_mine_count == min_mine_count:
-                            score = math.comb(len(coordinates), min_mine_count)
-                            scores.append(score)
-                            coordinates_list.append(coordinates)
+                # if len(coordinates_list) == 0:
+                #     for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+                #         if max_mine_count == min_mine_count:
+                #             score = math.comb(len(coordinates), min_mine_count)
+                #             scores.append(score)
+                #             coordinates_list.append(coordinates)
 
                 # 排序，优先选择 scores 最低的
                 idx = sorted(range(len(scores)), key=lambda i: scores[i])
@@ -485,7 +403,7 @@ class Weeper:
                         for idx, marked_mine_coordinates in enumerate(itertools.combinations(coordinates, min_mine_count)):
                             combinations.append(tuple(marked_mine_coordinates))
                         # 打乱顺序
-                        random.shuffle(combinations)
+                        # random.shuffle(combinations)
                     else:
                         combinations = itertools.combinations(coordinates, min_mine_count)
 
@@ -591,6 +509,7 @@ class Weeper:
                 return self.check_rules(self.table)
 
             if len(safe_marked) > 0:
+                self.print_table(self.table)
                 self.refresh_table(refresh_by_screenshot=True)
 
             self.print_table(self.table)
@@ -607,7 +526,7 @@ class Weeper:
         求解某个 Table，如果没有确定解，则会你先回溯剪枝
         """
 
-        PRINT_FLAG = (depth < 1)
+        PRINT_FLAG = (depth < 10)
         def my_print(*args, **kwargs):
             if PRINT_FLAG:
                 print(*args, **kwargs)
@@ -616,9 +535,12 @@ class Weeper:
             raise ValueError(f'depth > 40: {depth}')
 
         if self.mine_count > self.unknown_count:
+            print(f'mine_count > unknown_count: {self.mine_count} > {self.unknown_count}')
             return False
 
         if not self.check_rules(self.table):
+            # self.print_table(self.table)
+            # print('check_rules 出错')
             return False
 
         # 退出条件：雷 = 0，unkown = 0
@@ -628,6 +550,10 @@ class Weeper:
         try:
             constraints = self.create_table_constraints(self.table, self.mine_count)
         except:
+            import traceback
+            traceback.print_exc()
+            self.print_table(self.table)
+            print(f'create_constrains error')
             return False
 
         mine_marked, safe_marked = set(), set()
@@ -641,6 +567,9 @@ class Weeper:
                     new_mine_marked, new_safe_marked = self.solve_by_ensure(constraints)
                 except Exception as e:
                     # 这里是有可能出错的，因为有的时候暴力去猜，到最后可能出错
+                    # import traceback
+                    # traceback.print_exc()
+                    # print('solve_by_ensure 出错')
                     return False
 
                 mine_marked.update(new_mine_marked)
@@ -658,6 +587,9 @@ class Weeper:
                     new_constraints = self.refresh_constraints(constraints, new_constraints, 500)
                     # print(f'num_updated: {len(new_constraints)}, constraints: {len(constraints)}')
                 except:
+                    # import traceback
+                    # traceback.print_exc()
+                    print('refresh_constraints 出错')
                     return False
 
                 if len(new_constraints) == 0:
@@ -679,18 +611,19 @@ class Weeper:
                 coordinates_list = []
                 # 只选择确定雷数的
                 for coordinates, (min_mine_count, max_mine_count) in constraints.items():
-                    if len(coordinates) < 10 and max_mine_count == min_mine_count:
+                    # if len(coordinates) < 10 and max_mine_count == min_mine_count:
+                    if max_mine_count == min_mine_count:
                         score = math.comb(len(coordinates), min_mine_count)
                         scores.append(score)
                         coordinates_list.append(coordinates)
 
                 # 如果没有 coordinates_list，那就放宽条件
-                if len(coordinates_list) == 0:
-                    for coordinates, (min_mine_count, max_mine_count) in constraints.items():
-                        if max_mine_count == min_mine_count:
-                            score = math.comb(len(coordinates), min_mine_count)
-                            scores.append(score)
-                            coordinates_list.append(coordinates)
+                # if len(coordinates_list) == 0:
+                #     for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+                #         if max_mine_count == min_mine_count:
+                #             score = math.comb(len(coordinates), min_mine_count)
+                #             scores.append(score)
+                #             coordinates_list.append(coordinates)
 
                 # 排序，优先选择 scores 最低的
                 idx = sorted(range(len(scores)), key=lambda i: scores[i])
@@ -804,7 +737,7 @@ class Weeper:
                 # self.window_analyzer.click_skip_this_level()
 
 
-    def solve_by_ensure(self, constraints: dict) -> tuple[set, set]:
+    def solve_by_ensure(self, constraints: ConstraintsDict) -> tuple[set, set]:
         new_safe_marked = set()
         new_mine_marked = set()
         for coordinates, (min_mine_count, max_mine_count) in constraints.items():
@@ -825,9 +758,30 @@ class Weeper:
                 raise ValueError(f'min_mine_count > max_mine_count: {min_mine_count} > {max_mine_count}')
 
         return (new_mine_marked, new_safe_marked)
+
+    def solve_by_rules(self, constraints: ConstraintsDict) -> tuple[set, set]:
+        mine_marked = set()
+        safe_marked = set()
+
+        if self.is_S:
+            mine_marked, safe_marked = self.solve_by_snake(constraints)
+
+        return (mine_marked, safe_marked)
+
                 
 
-    def solve_by_force(self, constraints: dict, thresh: int, max_count: int = None):
+    def solve_by_force(self, depth: int, max_depth: int, old_constraints: ConstraintsDict, constraints: ConstraintsDict, thresh: int, max_count: int = None):
+        def my_print(s):
+            if depth < 1:
+                print(s)
+            else:
+                pass
+
+        if depth > max_depth:
+            return set(), set()
+
+        constraints_bak = constraints.copy()
+
         scores = []
         coordinates_list = []
         # 只选择确定雷数的
@@ -837,13 +791,23 @@ class Weeper:
             if len(coordinates) > 9 or min_mine_count == 0:
                 continue
 
+            if min(min_mine_count, len(coordinates)-min_mine_count) > 3:
+                continue
+
+            # 如果是旧的 constraints 里面存在，那么不遍历（因为上层会遍历的）
+            if coordinates in old_constraints:
+                old_min, old_max = old_constraints[coordinates]
+                if old_min == old_max and old_min == min_mine_count:
+                    continue
+
             if max_mine_count == min_mine_count:
                 score = math.comb(len(coordinates), min_mine_count)
                 if score < thresh:
                     scores.append(score)
                     coordinates_list.append(coordinates)
 
-            elif max_mine_count - min_mine_count < 3:
+            # 只有第一层才会多进行选择
+            elif depth == 0 and max_mine_count - min_mine_count < 3:
                 score = math.comb(len(coordinates), min_mine_count)
                 if score < thresh:
                     scores.append(score * 100)
@@ -870,7 +834,7 @@ class Weeper:
             coordinates = coordinates_list[i]
             min_mine_count, max_mine_count = constraints[coordinates]
 
-            print(f'尝试方法二暴力遍历（{i}/{len(coordinates_list)}），坐标: {coordinates}, 雷数: {min_mine_count} ~ {max_mine_count}')
+            my_print(f'depth = {depth}，尝试方法二暴力遍历（{i}/{len(coordinates_list)}），坐标: {coordinates}, 雷数: {min_mine_count} ~ {max_mine_count}')
 
             table_bak = self.table.copy()
 
@@ -885,13 +849,14 @@ class Weeper:
                 self.table = table_bak.copy()
                 for coordinate in marked_mine_coordinates:
                     self.table[coordinate[0], coordinate[1]] = 'mine'
-                # 尝试五次分析
+
+                # 开始推测
                 if marked_mine_coordinates in record_tables:
                     is_ok, self.table = record_tables[marked_mine_coordinates]
                 else:
-                    is_ok = self.deduce_table_with_assumptions(try_count=5)
+                    is_ok = self.deduce_table_with_assumptions(depth, max_depth, constraints_bak, try_count=5)
                     record_tables[marked_mine_coordinates] = (is_ok, self.table.copy())
-                print(f'猜测 {marked_mine_coordinates} 的结果: {is_ok}')
+                my_print(f'猜测 {marked_mine_coordinates} 的结果: {is_ok}')
 
                 if is_ok:
                     tables.append(self.table.copy())
@@ -914,6 +879,9 @@ class Weeper:
                         self.table = table_bak.copy()
                         return (set(marked_safe_coordinates), set())
 
+            # 如果 max == mine 的时候，发现没有找到合适解，说明这个是错的
+            if max_mine_count == min_mine_count and len(tables) == 0:
+                raise ValueError(f'max_mine_count == min_mine_count and len(tables) == 0')
 
             new_mine_marked = set()
             new_safe_marked = set()
@@ -952,27 +920,218 @@ class Weeper:
 
         return (set(), set())
 
+    def solve_by_snake(self, constraints) -> tuple[set, set]:
+        '''
+        基于 [S] 的规则，检查是否有可通路
+        '''
+        mine_marked, safe_marked = set(), set()
+        path_results = dict()
+        table_copy = self.table.copy()
+
+        # [S] 规则，暴力破解，查看是否有解
+        coordinates_possible = dict()
+        # 优先找概率大的点
+        for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+            if len(coordinates) > 9 or min_mine_count == 0 or min_mine_count != max_mine_count:
+                continue
+
+            score = math.comb(len(coordinates), min_mine_count)
+            for coordinate in coordinates:
+                coordinates_possible[coordinate] = score
+
+        for i in range(self.table.shape[0]):
+            for j in range(self.table.shape[1]):
+                if self.table[i, j] == 'unknown' and (i, j) not in coordinates_possible:
+                    coordinates_possible[(i, j)] = 100000
+
+        # 优先选择小的点
+        coordinates_possible = sorted(coordinates_possible.items(), key=lambda x: x[1])
+        for coordinate, score in coordinates_possible:
+
+            self.table = table_copy.copy()
+            self.table[coordinate[0], coordinate[1]] = 'mine'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            import utils
+            now_mine_coordinates = utils.bfs_connected_region(self.table, [coordinate], connected_type=4, allowed_cell_types={'mine'})
+            is_snake, head, tail = S._is_snake_and_find_endpoints(now_mine_coordinates, self.table.shape)
+            if not is_snake:
+                safe_marked.add(coordinate)
+                break
+            now_mine_coordinates = tuple(sorted(now_mine_coordinates, key=lambda x: (x[0], x[1])))
+
+            is_ok = self.is_resolvable_by_snake(1, now_mine_coordinates, [head, tail], path_results)
+            print(f'Solve By Snake: {coordinate} -> {is_ok}')
+            if not is_ok:
+                safe_marked.add(coordinate)
+                break
+
+        for path in path_results:
+            if path_results[path] == True and len(path) == self.mine_total:
+                print(path)
+
+        # print(coordinates_possible)
+        # print(safe_marked)
+        # print(mine_marked)
+        # exit(0)
+
+        self.table = table_copy.copy()
+        self.refresh_table(refresh_by_screenshot=False)
+
+        return (mine_marked, safe_marked)
+
+    def is_resolvable_by_snake(self, depth: int, mine_coordinates: tuple, endpoints: list, path_results: dict):
+        '''
+        递归去判断此时是否能找到合适的 [S] 蛇形路径
+        mine_coordinates: 当前进行扩展的 mines
+        endpoints: mines 的一/两个端点
+        '''
+        def my_print(*args, **kwargs):
+            if depth <= 0:
+                print(*args, **kwargs)
+                self.print_table(self.table)
+                # S.is_legal(self.table, self.mine_count, self, print_flag=True)
+
+        import utils
+        self.refresh_table(refresh_by_screenshot=False)
+        if self.mine_count == 0:
+            self.table[self.table == 'unknown'] = 'question'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            is_ok = True
+            try:
+                assert(self.check_rules(self.table))
+            except:
+                is_ok = False
+            path_results[mine_coordinates] = is_ok
+            return is_ok
+
+        # 获取可以扩展的列表
+        unknown_coordinates = set()
+        for endpoint in endpoints:
+            for neigbor in utils.get_four_directions(endpoint, self.table.shape):
+                if self.table[neigbor] == 'unknown':
+                    unknown_coordinates.add(neigbor)
+
+        # 开始遍历
+        table_copy = self.table.copy()
+
+        # 检查新扩展的列表是否符合要求，如果 deg 是 1，那么没问题；如果 deg 是 2，需要进行检查
+        for coordinate in unknown_coordinates:
+            self.table = table_copy.copy()
+            self.table[coordinate[0], coordinate[1]] = 'mine'
+            self.refresh_table(refresh_by_screenshot=False)
+
+
+            mine_count = 0
+            for neigbor in utils.get_four_directions(coordinate, self.table.shape):
+                if self.table[neigbor] == 'mine':
+                    mine_count += 1
+
+            if mine_count > 2:
+                continue
+
+            now_mine_coordinates = None
+            now_endpoints = None
+            if mine_count == 2:
+                now_mine_coordinates = utils.bfs_connected_region(self.table, [coordinate], connected_type=4, allowed_cell_types={'mine'})
+                is_snake, head, tail = S._is_snake_and_find_endpoints(now_mine_coordinates, self.table.shape)
+                if not is_snake:
+                    continue
+                now_endpoints = [head, tail]
+
+            if mine_count == 1:
+                now_mine_coordinates = set(mine_coordinates)
+                now_mine_coordinates.add(coordinate)
+                is_snake, head, tail = S._is_snake_and_find_endpoints(now_mine_coordinates, self.table.shape)
+                now_endpoints = [head, tail]
+
+            if mine_count == 0:
+                self.print_table(self.table)
+                print(f'minecount == 0; coordinate = {coordinate}; endpoints = {endpoints}')
+                exit(0)
+
+            now_mine_coordinates = tuple(sorted(now_mine_coordinates, key=lambda x: (x[0], x[1])))
+
+            if now_mine_coordinates in path_results:
+                if path_results[now_mine_coordinates] == True:
+                    return True
+                continue
+
+            my_print(f'----'*(depth+1) + f'--> Snake depth = {depth}，坐标: {coordinate}, 候选: {unknown_coordinates}, len(path_results): {len(path_results)}')
+
+            is_ok = True
+            # while True:
+            #     try:
+            #         constraints = self.create_table_constraints(self.table, self.mine_count)
+            #         mine_marked, safe_marked = self.solve_by_ensure(constraints)
+
+            #         # 如果找到确定解，那么退出
+            #         new_constraints = constraints.copy()
+            #         while (len(mine_marked) + len(safe_marked)) == 0:
+            #             if len(constraints) > 1000 or len(new_constraints) == 0:
+            #                 break
+            #             new_constraints = self.refresh_constraints(constraints, new_constraints, 500)
+            #             mine_marked, safe_marked = self.solve_by_ensure(constraints)
+            #     except Exception as e:
+            #         is_ok = False
+            #         break
+
+            #     if (len(mine_marked) + len(safe_marked)) == 0:
+            #         break
+
+            #     for coordinate in mine_marked:
+            #         self.table[coordinate] = 'mine'
+            #     for coordinate in safe_marked:
+            #         self.table[coordinate] = 'question'
+            #     self.refresh_table(refresh_by_screenshot=False)
+
+            try:
+                assert(self.check_rules(self.table))
+            except:
+                path_results[now_mine_coordinates] = False
+                # import traceback
+                # traceback.print_exc()
+                # self.print_table(self.table)
+                # print('check_rules error, return False')
+                continue
+
+            if not is_ok:
+                path_results[now_mine_coordinates] = False
+                continue
+
+            is_ok = self.is_resolvable_by_snake(depth+1, now_mine_coordinates, now_endpoints, path_results)
+            if is_ok:
+                path_results[now_mine_coordinates] = True
+                return True
+
+        path_results[mine_coordinates] = False
+        return False
 
 
 if __name__ == "__main__":
-    is_V = True
+    is_V = False
     is_Q = False
     is_C = False
     is_T = False
-    is_O = True
-    weeper = Weeper(None, mine_total=26, is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, is_O=is_O)
-    weeper.solve(10)
+    is_O = False
+    is_D = False
+    is_S = False
+    is_B = False
+    is_M = True
+    weeper = Weeper(None, mine_total=26, is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, is_M=is_M)
+    weeper.solve(100)
     weeper.window_analyzer.click_goto_next_level()
 
     # table = np.array([
-    #     [' ', '*', '1', '0', '?', '*', '?', '*'],
-    #     ['*', '3', '2', '?', '3', '4', '*', '*'],
-    #     ['?', '*', '3', '2', '*', '*', '4', '?'],
-    #     ['?', '*', '*', '?', '5', '*', '2', '0'],
-    #     ['*', '6', '*', '*', '*', '3', '?', '0'],
-    #     ['*', '?', '*', '?', '5', '*', '4', '?'],
-    #     ['*', '3', '2', '*', '3', '*', '*', '*'],
-    #     ['?', '1', '?', '1', '2', '?', '*', '*'],
+    #     ['?', '2', '*', '*', '*', '*', '?', ' '],
+    #     ['0', '?', '*', '?', '?', '*', ' ', ' '],
+    #     ['?', '1', '2', '3', '?', ' ', ' ', ' '],
+    #     ['1', '?', '3', '*', '*', '?', ' ', '0'],
+    #     ['?', '*', '*', '?', '*', '*', '4', '?'],
+    #     [' ', ' ', ' ', ' ', '*', ' ', ' ', ' '],
+    #     [' ', ' ', ' ', ' ', '*', ' ', ' ', ' '],
+    #     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
     # ]).astype(object)
 
     # # '2'-> 2, ?->question, ' '->unknown, '*'->mine
