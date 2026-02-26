@@ -765,6 +765,8 @@ class Weeper:
 
         if self.is_S:
             mine_marked, safe_marked = self.solve_by_snake(constraints)
+        if self.is_O:
+            mine_marked, safe_marked = self.solve_by_outer(constraints)
 
         return (mine_marked, safe_marked)
 
@@ -1107,6 +1109,79 @@ class Weeper:
 
         path_results[mine_coordinates] = False
         return False
+
+    def solve_by_outer(self, constraints) -> tuple[set, set]:
+        '''
+        基于 [O] 的规则，检查是否有可通路
+        '''
+        mine_marked, safe_marked = set(), set()
+        table_copy = self.table.copy()
+
+        # [S] 规则，暴力破解，查看是否有解
+        coordinates_possible = dict()
+        # 优先找概率大的点
+        for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+            if len(coordinates) > 9 or min_mine_count == 0 or min_mine_count != max_mine_count:
+                continue
+
+            score = math.comb(len(coordinates), min_mine_count)
+            for coordinate in coordinates:
+                coordinates_possible[coordinate] = score
+
+        for i in range(self.table.shape[0]):
+            for j in range(self.table.shape[1]):
+                if self.table[i, j] == 'unknown' and (i, j) not in coordinates_possible:
+                    coordinates_possible[(i, j)] = 100000
+
+        # 优先选择小的点
+        coordinates_possible = sorted(coordinates_possible.items(), key=lambda x: x[1])
+        for coordinate, score in coordinates_possible:
+
+            self.table = table_copy.copy()
+            self.table[coordinate[0], coordinate[1]] = 'mine'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            is_ok = self.is_resolvable_by_outer(constraints)
+            print(f'Solve By Outer: {coordinate} -> {is_ok}')
+            if not is_ok:
+                safe_marked.add(coordinate)
+                break
+
+        self.table = table_copy.copy()
+        self.refresh_table(refresh_by_screenshot=False)
+
+        return (mine_marked, safe_marked)
+
+    def is_resolvable_by_outer(self, constraints):
+        table_bak = self.table.copy()
+        for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+            # 每次试一下是否能联通
+            # 但还是先优先选择 max == min
+            if len(coordinates) > 9 or min_mine_count == 0 or min_mine_count != max_mine_count:
+                continue
+
+            is_resolvable = False
+            for idx, marked_mine_coordinates in enumerate(itertools.combinations(coordinates, min_mine_count)):
+                self.table = table_bak.copy()
+                for coordinate in coordinates:
+                    if coordinate not in marked_mine_coordinates:
+                        self.table[coordinate[0], coordinate[1]] = 'question'
+                    else:
+                        self.table[coordinate[0], coordinate[1]] = 'mine'
+
+                self.refresh_table(refresh_by_screenshot=False)
+
+                try:
+                    is_resolvable = self.check_rules(self.table)
+                except:
+                    pass
+                if is_resolvable:
+                    break
+
+            if not is_resolvable:
+                return False
+        return True
+
 
 
 if __name__ == "__main__":

@@ -3,9 +3,10 @@ V 的规则：普通扫雷的规则
 '''
 import numpy as np
 import utils
+from constraint import Constraint, ConstraintsDict
 
-def create_constraints(table: np.ndarray) -> dict:
-    results = dict()
+def create_constraints(table: np.ndarray) -> ConstraintsDict:
+    results = ConstraintsDict()
 
     # 遍历所有格子，创建约束
     for i in range(table.shape[0]):
@@ -21,7 +22,7 @@ def create_constraints(table: np.ndarray) -> dict:
                         coordinates.append(neighbor)
                 mine_count = int(table[i, j]) - found_mines
                 if len(coordinates) > 0:
-                    results[tuple(coordinates)] = (mine_count, mine_count)
+                    results[Constraint(coordinates)] = (mine_count, mine_count)
     
     return results
 
