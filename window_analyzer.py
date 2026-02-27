@@ -233,6 +233,8 @@ if __name__ == "__main__":
     analyzer = WindowAnalyzer(window_title)
     # analyzer.analyze_window_by_title()
     screenshot = analyzer.capture_window_screenshot()
-    tableimg = analyzer.parse_img_to_table(screenshot)
+    table_data = analyzer.parse_img_to_table(screenshot)
+    print(table_data)
+
     # analyzer.click_goto_next_level()
     # analyzer.click_skip_this_level()

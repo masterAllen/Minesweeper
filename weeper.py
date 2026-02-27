@@ -23,14 +23,15 @@ except ImportError:
     print("警告: keyboard 库未安装，空格键退出功能不可用。请运行: pip install keyboard")
 
 # 导入规则模块
-from rules import V, Q, C, T, O, D, S, B, M
+from rules import V, Q, C, T, O, D, S, B, M, T2, D2, A, H, L
 from constraint import Constraint, ConstraintsDict
 import utils
 
 class Weeper:
     def __init__(self, table: np.ndarray, mine_total: int, is_V: bool = True, \
         is_Q: bool = False, is_C: bool = False, is_T: bool = False, is_O: bool = False, is_D: bool = False, \
-        is_S: bool = False, is_B: bool = False, is_M: bool = False) -> None:
+        is_S: bool = False, is_B: bool = False, is_M: bool = False, is_T2: bool = False, is_D2: bool = False, \
+        is_A: bool = False, is_H: bool = False, is_L: bool = False) -> None:
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
@@ -45,7 +46,12 @@ class Weeper:
         self.is_S = is_S
         self.is_B = is_B
         self.is_M = is_M
-        
+        self.is_T2 = is_T2
+        self.is_D2 = is_D2
+        self.is_A = is_A
+        self.is_H = is_H
+        self.is_L = is_L
+
         if table is None:
             window_title = "Minesweeper Variants"
             self.window_analyzer = WindowAnalyzer(window_title)
@@ -119,6 +125,16 @@ class Weeper:
             return False
         if self.is_M and not M.is_legal(table):
             return False
+        if self.is_T2 and not T2.is_legal(table):
+            return False
+        if self.is_D2 and not D2.is_legal(table):
+            return False
+        if self.is_A and not A.is_legal(table):
+            return False
+        if self.is_H and not H.is_legal(table):
+            return False
+        if self.is_L and not L.is_legal(table):
+            return False
         
         return True
 
@@ -154,6 +170,16 @@ class Weeper:
             rule_constraints_list.append(B.create_constraints(table, self.mine_total))
         if self.is_M:
             rule_constraints_list.append(M.create_constraints(table))
+        if self.is_T2:
+            rule_constraints_list.append(T2.create_constraints(table))
+        if self.is_D2:
+            rule_constraints_list.append(D2.create_constraints(table))
+        if self.is_A:
+            rule_constraints_list.append(A.create_constraints(table))
+        if self.is_H:
+            rule_constraints_list.append(H.create_constraints(table))
+        if self.is_L:
+            rule_constraints_list.append(L.create_constraints(table))
 
         # 合并所有规则的约束
         for rule_constraints in rule_constraints_list:
@@ -1193,8 +1219,20 @@ if __name__ == "__main__":
     is_D = False
     is_S = False
     is_B = False
-    is_M = True
-    weeper = Weeper(None, mine_total=26, is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, is_M=is_M)
+    is_M = False
+    is_T2 = False
+    is_D2 = False
+    is_A = False
+    is_H = False
+    is_L = True
+
+    weeper = Weeper(
+        None, mine_total=26, 
+        is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, 
+        is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, 
+        is_M=is_M, is_T2=is_T2, is_D2=is_D2, is_A=is_A,
+        is_H=is_H, is_L=is_L
+    )
     weeper.solve(100)
     weeper.window_analyzer.click_goto_next_level()
 
