@@ -34,6 +34,52 @@ def get_four_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -> 
         results.append(coord)
     return results
 
+def get_diagonal_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -> list[tuple[int, int]]:
+    """
+    返回四个对角线的坐标：左上、右上、左下、右下
+    """
+    directions = [
+        (-1, -1), (-1, 1), (1, -1), (1, 1)
+    ]
+    results = []
+    for dx, dy in directions:
+        coord = (coordinate[0] + dx, coordinate[1] + dy)
+        if coord[0] < 0 or coord[0] >= shape[0] or coord[1] < 0 or coord[1] >= shape[1]:
+            continue
+        results.append(coord)
+    return results
+
+def get_knight_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -> list[tuple[int, int]]:
+    """
+    返回马步的坐标：两个方向的组合
+    """
+    directions = [
+        (-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)
+    ]
+    results = []
+    for dx, dy in directions:
+        coord = (coordinate[0] + dx, coordinate[1] + dy)
+        if coord[0] < 0 or coord[0] >= shape[0] or coord[1] < 0 or coord[1] >= shape[1]:
+            continue
+        results.append(coord)
+    return results
+
+def get_cross2_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -> list[tuple[int, int]]:
+    """
+    返回十字的坐标：周围两格十字
+    """
+    directions = [
+        (-2, 0), (-1, 0), (1, 0), (2, 0), 
+        (0, -2), (0, -1), (0, 1), (0, 2),
+    ]
+    results = []
+    for dx, dy in directions:
+        coord = (coordinate[0] + dx, coordinate[1] + dy)
+        if coord[0] < 0 or coord[0] >= shape[0] or coord[1] < 0 or coord[1] >= shape[1]:
+            continue
+        results.append(coord)
+    return results
+
 def bfs_connected_region(table: np.ndarray, start_coords: list, connected_type: int, allowed_cell_types: set) -> set:
     """
     使用 BFS 找到从起始坐标开始的四/八连通区域
