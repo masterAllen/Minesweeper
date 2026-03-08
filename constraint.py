@@ -1,9 +1,10 @@
 from typing import Iterator
 
 class Constraint:
-    def __init__(self, coordinates: list):
+    def __init__(self, coordinates):
         # self.coordinates = tuple(coordinates)
         # 按照顺序排序
+        coordinates = list(coordinates)
         coordinates_sorted = sorted(coordinates, key=lambda x: (x[0], x[1]))
         self.coordinates = tuple(coordinates_sorted)
 
@@ -62,6 +63,8 @@ class ConstraintsDict(dict):
             key = Constraint(key)
         
         min_mine_count, max_mine_count = value
+        min_mine_count = max(min_mine_count, 0)
+        max_mine_count = min(max_mine_count, len(key))
 
         # 如果这个约束其实没有意义，则忽略
         if min_mine_count == 0 and max_mine_count == len(key):
@@ -93,13 +96,43 @@ class ConstraintsDict(dict):
             
             # 只有真正更新时才赋值
             if new_min != old_min or new_max != old_max:
-                super().__setitem__(key, (new_min, new_max))
+                super().__setitem__(key, (int(new_min), int(new_max)))
         else:
             # 新约束直接添加
-            super().__setitem__(key, (min_mine_count, max_mine_count))
+            super().__setitem__(key, (int(min_mine_count), int(max_mine_count)))
     
-    def set_force(self, key, value):
-        """强制设置，不做合并检查"""
+
+class ConstraintsDictV2(dict):
+    """
+    自动处理约束更新的字典，使用方式: constraints[coordinates] = {n1, n2, ...}
+    key: 坐标列表/元组，会自动转换为 Constraint
+    value: 集合，包含所有可能的雷数
+    会自动合并已有约束，取交集
+    """
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __setitem__(self, key, value):
+        """
+        重写赋值操作，自动处理约束合并
+        key: 坐标列表/元组，会自动转换为 Constraint
+        value: 可能的雷数
+        """
+        # 确保 key 是 Constraint 类型
         if not isinstance(key, Constraint):
             key = Constraint(key)
+        
+        # 空坐标不处理
+        if len(key) == 0:
+            return
+
+        # 如果已存在，合并约束（取交集）
+        if key in self:
+            old_value = super().__getitem__(key)
+            value = old_value & value
+
+        if len(value) == 0:
+            raise ValueError(f'len(value) == 0, key = {key}, value = {value}')
+
         super().__setitem__(key, value)
