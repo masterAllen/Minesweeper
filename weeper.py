@@ -23,7 +23,7 @@ except ImportError:
     print("警告: keyboard 库未安装，空格键退出功能不可用。请运行: pip install keyboard")
 
 # 导入规则模块
-from rules import V, Q, C, T, O, D, S, B, M, T2, D2, A, H, L
+from rules import V, Q, C, T, O, D, S, B, M, T2, D2, A, H, L, N, X, P, E, X2, K
 from constraint import Constraint, ConstraintsDict
 import utils
 
@@ -31,7 +31,8 @@ class Weeper:
     def __init__(self, table: np.ndarray, mine_total: int, is_V: bool = True, \
         is_Q: bool = False, is_C: bool = False, is_T: bool = False, is_O: bool = False, is_D: bool = False, \
         is_S: bool = False, is_B: bool = False, is_M: bool = False, is_T2: bool = False, is_D2: bool = False, \
-        is_A: bool = False, is_H: bool = False, is_L: bool = False) -> None:
+        is_A: bool = False, is_H: bool = False, is_L: bool = False, is_N: bool = False, is_X: bool = False, \
+        is_P: bool = False, is_E: bool = False, is_X2: bool = False, is_K: bool = False) -> None:
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
@@ -51,6 +52,12 @@ class Weeper:
         self.is_A = is_A
         self.is_H = is_H
         self.is_L = is_L
+        self.is_N = is_N
+        self.is_X = is_X
+        self.is_P = is_P
+        self.is_E = is_E
+        self.is_X2 = is_X2
+        self.is_K = is_K
 
         if table is None:
             window_title = "Minesweeper Variants"
@@ -59,6 +66,11 @@ class Weeper:
         # 启动键盘监听线程
         if KEYBOARD_AVAILABLE:
             self._start_keyboard_listener()
+
+        self.record_tables = dict()
+
+        # 最新更新的坐标
+        self.newest_coordinates = (4, 5)
 
     def _start_keyboard_listener(self):
         """启动键盘监听线程，监听空格键，按下时直接强制退出"""
@@ -107,6 +119,8 @@ class Weeper:
         """
         检查当前表格是否符合所有规则
         """
+        if self.mine_count < 0 or self.unknown_count < 0:
+            return False
         if self.is_V and not V.is_legal(table):
             return False
         if self.is_Q and not Q.is_legal(table):
@@ -134,6 +148,18 @@ class Weeper:
         if self.is_H and not H.is_legal(table):
             return False
         if self.is_L and not L.is_legal(table):
+            return False
+        if self.is_N and not N.is_legal(table):
+            return False
+        if self.is_X and not X.is_legal(table):
+            return False
+        if self.is_P and not P.is_legal(table):
+            return False
+        if self.is_E and not E.is_legal(table):
+            return False
+        if self.is_X2 and not X2.is_legal(table):
+            return False
+        if self.is_K and not K.is_legal(table):
             return False
         
         return True
@@ -180,6 +206,18 @@ class Weeper:
             rule_constraints_list.append(H.create_constraints(table))
         if self.is_L:
             rule_constraints_list.append(L.create_constraints(table))
+        if self.is_N:
+            rule_constraints_list.append(N.create_constraints(table))
+        if self.is_X:
+            rule_constraints_list.append(X.create_constraints(table))
+        if self.is_P:
+            rule_constraints_list.append(P.create_constraints(table))
+        if self.is_E:
+            rule_constraints_list.append(E.create_constraints(table))
+        if self.is_X2:
+            rule_constraints_list.append(X2.create_constraints(table))
+        if self.is_K:
+            rule_constraints_list.append(K.create_constraints(table))
 
         # 合并所有规则的约束
         for rule_constraints in rule_constraints_list:
@@ -202,7 +240,6 @@ class Weeper:
             constraints[unknown_coordinates] = (self.mine_count, self.mine_count)
 
         return constraints
-
 
     def refresh_constraints(self, constraints: ConstraintsDict, new_constraints: ConstraintsDict, thresh: int) -> ConstraintsDict:
         # print(f'--> Constraints NUM: {len(constraints)}')
@@ -227,12 +264,14 @@ class Weeper:
         self.refresh_table(refresh_by_screenshot=False)
 
         for _ in range(try_count):
+            # self.print_table(self.table)
+            # print('======================================')
             try:
                 constraints = self.create_table_constraints(self.table, self.mine_count)
             except:
-                # import traceback
-                # traceback.print_exc()
-                # print(f'depth = {depth}, create_constraints error')
+                import traceback
+                traceback.print_exc()
+                print(f'depth = {depth}, create_constraints error')
                 return False
             mine_marked, safe_marked = set(), set()
 
@@ -245,9 +284,9 @@ class Weeper:
                         break
             except:
                 # 发生错误，那么就说明这个假设不应该存在，是错误
-                # import traceback
-                # traceback.print_exc()
-                # print('refresh_constraints error')
+                import traceback
+                traceback.print_exc()
+                print('refresh_constraints error')
                 return False
 
             try:
@@ -269,9 +308,9 @@ class Weeper:
                 assert(self.check_rules(self.table))
 
             except:
-                # import traceback
-                # traceback.print_exc()
-                # print('solve_by_ensure_with_rules error')
+                import traceback
+                traceback.print_exc()
+                print('solve_by_ensure_with_rules error')
                 return False
 
             try:
@@ -298,9 +337,9 @@ class Weeper:
                     assert(self.check_rules(self.table))
             
             except:
-                # import traceback
-                # traceback.print_exc()
-                # print('solve_by_force error')
+                import traceback
+                traceback.print_exc()
+                print('solve_by_force error')
                 return False
 
             # 退出条件：雷 = 0，unkown = 0
@@ -366,10 +405,26 @@ class Weeper:
                 if len(new_constraints) == 0:
                     break
 
+            print('solve by oneassume')
+            # 2. 如果不可以，那就执行一个雷的假设
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                new_mine_marked, new_safe_marked = self.solve_by_oneassume(constraints)
+                print(f'====> 根据 OneAssume 确定：{new_mine_marked} {new_safe_marked}')
+                mine_marked.update(new_mine_marked)
+                safe_marked.update(new_safe_marked)
+
+            # 3. 如果不可以，那就执行一个雷的假设，里面继续做一次雷的假设递归
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                new_mine_marked, new_safe_marked = self.solve_by_oneassume_2times(constraints)
+                print(f'====> 根据 OneAssume 确定：{new_mine_marked} {new_safe_marked}')
+                self.print_table(self.table)
+                mine_marked.update(new_mine_marked)
+                safe_marked.update(new_safe_marked)
+
             # 2. 如果不可以，那就小范围穷举，检查是否有的格子一定是雷或者一定是安全的
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
                 new_mine_marked, new_safe_marked = self.solve_by_force(0, 0, ConstraintsDict(), constraints, 61, 100)
-                print(f'====> 根据方法二确定：{new_mine_marked} {new_safe_marked}')
+                print(f'====> 根据 ByForce 确定：{new_mine_marked} {new_safe_marked}')
                 mine_marked.update(new_mine_marked)
                 safe_marked.update(new_safe_marked)
 
@@ -380,6 +435,9 @@ class Weeper:
                 mine_marked.update(new_mine_marked)
                 safe_marked.update(new_safe_marked)
 
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                return False
+
             # 3. 如果不可以，那么尝试用暴力 + rules 去求解
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
                 s_mine_marked, s_safe_marked = self.solve_by_rules(constraints)
@@ -387,12 +445,22 @@ class Weeper:
                 mine_marked.update(s_mine_marked)
                 safe_marked.update(s_safe_marked)
 
+            # 上面有可能污染了，所以这里我就直接清空
+            self.record_tables = {}
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                self.refresh_table(refresh_by_screenshot=True)
+
+            # 4. 如果还是不行，那么就要回溯全局求解了
+            if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                m_mine_marked, m_safe_marked = self.solve_by_backtracking_v2(0)
+                print(f'====> 根据方法四（回溯全局求解）确定：{mine_marked} {safe_marked}')
+                mine_marked.update(m_mine_marked)
+                safe_marked.update(m_safe_marked)
 
             # 4. 如果还是不行，那么就要回溯全局求解了
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
                 # V1: 我们直接遍历所有的未知点，为了加速，我们先粗略计算每个坐标是雷的概率
                 # V2: 遍历所有的组合，如果某个组合中都能 continue 才进行下一个组合
-                self.refresh_table(refresh_by_screenshot=True)
 
                 scores = []
                 coordinates_list = []
@@ -524,18 +592,20 @@ class Weeper:
                 print(f'Mine: {coordinate}')
                 self.table[coordinate[0], coordinate[1]] = 'mine'
                 self.window_analyzer.click_cell(coordinate[0], coordinate[1], 'right')
+                self.newest_coordinates = coordinate
 
             for coordinate in safe_marked:
                 print(f'Safe: {coordinate}')
                 self.table[coordinate[0], coordinate[1]] = 'question' # 这里就是标记一下，之后会 refresh_table 读取成真正的内容
                 self.window_analyzer.click_cell(coordinate[0], coordinate[1], 'left')
+                self.newest_coordinates = coordinate
 
+            # 必须要在这里先刷新一下，这样可以满了之后就退出到下一关；没有这个，后面的 refresh_table 要截图识别就会失败（过关的时候有弹窗遮挡）
             self.refresh_table(refresh_by_screenshot=False)
             if self.mine_count == 0 and self.unknown_count == 0:
                 return self.check_rules(self.table)
 
             if len(safe_marked) > 0:
-                self.print_table(self.table)
                 self.refresh_table(refresh_by_screenshot=True)
 
             self.print_table(self.table)
@@ -545,6 +615,160 @@ class Weeper:
             import traceback
             traceback.print_exc()
             return False
+
+    # 回溯剪枝求解，版本 2 思路
+    def solve_by_backtracking_v2(self, depth: int) -> tuple[set, set]:
+        """
+        单个单个点求解
+        """
+        def solve_by_ensure_and_oneassume(constraints, mine_marked, safe_marked):
+            try:
+                new_constraints = constraints.copy()
+                while True:
+                    try:
+                        new_mine_marked, new_safe_marked = self.solve_by_ensure(constraints)
+                    except Exception as e:
+                        return False
+
+                    mine_marked.update(new_mine_marked)
+                    safe_marked.update(new_safe_marked)
+
+                    # 如果找到确定解，那么退出
+                    if (len(mine_marked) + len(safe_marked)) > 0:
+                        break
+
+                    # 刷新一下
+                    try:
+                        if len(constraints) > 1000:
+                            break
+                        new_constraints = self.refresh_constraints(constraints, new_constraints, 500)
+                    except:
+                        return False
+
+                    if len(new_constraints) == 0:
+                        break
+
+                # 2. 如果不可以，那就执行一个雷的假设
+                if (len(mine_marked) == 0 and len(safe_marked) == 0):
+                    new_mine_marked, new_safe_marked = self.solve_by_oneassume(constraints)
+                    mine_marked.update(new_mine_marked)
+                    safe_marked.update(new_safe_marked)
+                    return True
+            except:
+                return False
+            return True
+
+        def calculate_probability(constraints):
+            # 现阶段，先随机挑选一个点
+            probabilities = np.zeros(self.table.shape)
+            for coordinates, (min_mine_count, max_mine_count) in constraints.items():
+                # numerator, denominator = 0, 0
+                # for k in range(max(min_mine_count, 1), max_mine_count + 1):
+                #     numerator += math.comb(len(coordinates) - 1, k - 1)
+                #     denominator += math.comb(len(coordinates), k)
+                
+                # now_probability = numerator / denominator * 1000
+                for coordinate in coordinates:
+                    probabilities[coordinate[0], coordinate[1]] += 1
+
+            # 选择 unknown 中概率最大的点
+            coordinates = []
+            for i in range(self.table.shape[0]):
+                for j in range(self.table.shape[1]):
+                    if self.table[i, j] == 'unknown':
+                        coordinates.append((i, j, probabilities[i, j]))
+            coordinates.sort(key=lambda x: x[2], reverse=True)
+            return coordinates[0][0:2]
+            
+        def dfs(minenum_table, depth):
+            self.refresh_table(refresh_by_screenshot=False)
+
+            print(f'========= dfs depth = {depth} ========')
+            self.print_table(self.table)
+
+            # 判断是否雷的个数为 0
+            if self.mine_count == 0:
+                # 统计 minenum_table 中，雷的个数
+                minenum_table[self.table == 'mine'] += 1
+                return 1
+
+            # 进行 solve_by_ensure 和 solve_by_oneassume 处理
+            while True:
+                try:
+                    constraints = self.create_table_constraints(self.table, self.mine_count)
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    return 0
+
+                mine_marked, safe_marked = set(), set()
+                # 如果中途出错，那么直接返回
+                if not solve_by_ensure_and_oneassume(constraints, mine_marked, safe_marked):
+                    import traceback
+                    traceback.print_exc()
+                    return 0
+                if len(mine_marked) + len(safe_marked) == 0:
+                    break
+
+                for coordinate in mine_marked:
+                    self.table[coordinate[0], coordinate[1]] = 'mine'
+                for coordinate in safe_marked:
+                    self.table[coordinate[0], coordinate[1]] = 'question'
+
+                self.refresh_table(refresh_by_screenshot=False)
+                try:
+                    assert(self.check_rules(self.table))
+                except:
+                    return 0
+
+            # 判断是否雷的个数为 0
+            if self.mine_count == 0:
+                # 统计 minenum_table 中，雷的个数
+                minenum_table[self.table == 'mine'] += 1
+                return 1
+
+            # 计算各个雷的概率，并且选择一个点，进行两种 DFS
+            try:
+                point = calculate_probability(constraints)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.print_table(self.table)
+
+            print(f'========= choose point = {point} ========')
+
+            table_bak = self.table.copy()
+
+            # 两种 DFS
+            total = 0
+            self.table[point[0], point[1]] = 'mine'
+            total += dfs(minenum_table, depth+1)
+            self.table = table_bak.copy()
+
+            self.table[point[0], point[1]] = 'question'
+            total += dfs(minenum_table, depth+1)
+            self.table = table_bak.copy()
+
+            return total
+            
+        # 这个统计每个点 在可行解下，雷的个数
+        minenum_table = np.zeros(self.table.shape)
+        total = dfs(minenum_table, depth=0)
+        print(total)
+        if total == 0:
+            return set(), set()
+
+        # 统计 count 结果
+        mine_marked = set()
+        safe_marked = set()
+        for i in range(self.table.shape[0]):
+            for j in range(self.table.shape[1]):
+                if self.table[i, j] == 'unknown':
+                    if minenum_table[i, j] == total:
+                        mine_marked.add((i, j))
+                    if minenum_table[i, j] == 0:
+                        safe_marked.add((i, j))
+        return mine_marked, safe_marked
 
     # 回溯剪枝求解，最后一定弄出一个结果来
     def solve_by_backtracking(self, depth: int) -> bool:
@@ -578,7 +802,6 @@ class Weeper:
         except:
             import traceback
             traceback.print_exc()
-            self.print_table(self.table)
             print(f'create_constrains error')
             return False
 
@@ -759,8 +982,7 @@ class Weeper:
             if is_done:
                 self.window_analyzer.click_goto_next_level()
             else:
-                exit(0)
-                # self.window_analyzer.click_skip_this_level()
+                self.window_analyzer.click_skip_this_level()
 
 
     def solve_by_ensure(self, constraints: ConstraintsDict) -> tuple[set, set]:
@@ -796,6 +1018,215 @@ class Weeper:
 
         return (mine_marked, safe_marked)
 
+    def solve_by_oneassume(self, constraints: ConstraintsDict) -> tuple[set, set]:
+        # 遍历所有未知点，假设是 mine，查看是否能推导出错误
+        # TODO: 这里可以优先选择不是 mine 概率大的点
+
+        # 优先找上一次附近的点
+        unknown_coordinates = []
+        for i in range(self.table.shape[0]):
+            for j in range(self.table.shape[1]):
+                if self.table[i, j] == 'unknown':
+                    unknown_coordinates.append((i, j))
+        
+        x0, y0 = self.newest_coordinates
+        unknown_coordinates.sort(key=lambda x: abs(x[0] - x0) + abs(x[1] - y0))
+
+        table_bak = self.table.copy()
+        constraints_bak = constraints.copy()
+
+        must_mine, must_safe = set(), set()
+        for point in unknown_coordinates:
+            '''
+            假设是 mine
+            '''
+            self.table = table_bak.copy()
+            self.table[point] = 'mine'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            # 开始推测
+            # print(f'===================================================')
+            is_ok = self.deduce_table_with_assumptions(0, 0, constraints_bak, try_count=5)
+            self.record_tables[point] = (is_ok, self.table.copy())
+
+            # self.print_table(self.table)
+            # print(point, 'mine', is_ok)
+            if not is_ok:
+                must_safe.add(point)
+                continue
+
+            table1 = self.table.copy()
+
+            '''
+            假设不是 mine
+            '''
+            self.table = table_bak.copy()
+            self.table[point] = 'question'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            # 开始推测
+            # print(f'===================================================')
+            is_ok = self.deduce_table_with_assumptions(0, 0, constraints_bak, try_count=5)
+
+            # self.print_table(self.table)
+            # print(point, 'mine', is_ok)
+            if not is_ok:
+                must_mine.add(point)
+                continue
+
+            table2 = self.table.copy()
+
+            '''
+            查看有哪些点能是相同的，推出必然
+            '''
+            for p2 in unknown_coordinates:
+                if table1[p2] == table2[p2] and table1[p2] != 'unknown':
+                    if table1[p2] == 'mine':
+                        must_mine.add(p2)
+                    else:
+                        must_safe.add(p2)
+            if len(must_mine) > 0 or len(must_safe) > 0:
+                break
+
+        self.table = table_bak.copy()
+        self.refresh_table(refresh_by_screenshot=False)
+
+        return must_mine, must_safe
+
+
+    def solve_by_oneassume_2times(self, constraints: ConstraintsDict) -> tuple[set, set]:
+        # 遍历所有未知点，假设是 mine，查看是否能推导出错误
+        # TODO: 这里可以优先选择不是 mine 概率大的点
+        unknown_coordinates = []
+        for i in range(self.table.shape[0]):
+            for j in range(self.table.shape[1]):
+                if self.table[i, j] == 'unknown':
+                    unknown_coordinates.append((i, j))
+        x0, y0 = self.newest_coordinates
+        unknown_coordinates.sort(key=lambda x: abs(x[0] - x0) + abs(x[1] - y0))
+
+        table_bak = self.table.copy()
+        constraints_bak = constraints.copy()
+
+        must_mine, must_safe = set(), set()
+        for idx, point in enumerate(unknown_coordinates):
+            '''
+            假设是 mine
+            '''
+            self.table = table_bak.copy()
+            self.table[point] = 'mine'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            print('solve_by_oneassume_2times: ', point, idx, len(unknown_coordinates))
+
+            # 开始推测
+            # 因为这是做两次 oneassume，进行到这个函数的时候，说明一遍 oneassume 已经不行了
+            is_ok = True
+            for p2idx, point2 in enumerate(unknown_coordinates):
+                if point2 == point:
+                    continue
+
+                candidates = []
+                table2_bak = self.table.copy()
+
+                self.table[point2] = 'mine'
+                self.refresh_table(refresh_by_screenshot=False)
+                is_ok1 = self.deduce_table_with_assumptions(0, 0, constraints_bak, try_count=5)
+                if is_ok1:
+                    candidates.append(self.table.copy())
+
+                self.table = table2_bak.copy()
+                self.table[point2] = 'question'
+                self.refresh_table(refresh_by_screenshot=False)
+                is_ok2 = self.deduce_table_with_assumptions(0, 0, constraints_bak, try_count=5)
+                if is_ok2:
+                    candidates.append(self.table.copy())
+
+                print('     solve_by_oneassume_2times: ', point2, p2idx, len(unknown_coordinates), len(candidates))
+
+                # 如果 candidates 为空，说明外面第一层的假设就不行，那么直接退出
+                if len(candidates) == 0:
+                    is_ok = False
+                    break
+
+                self.table = table2_bak.copy()
+                for p2 in unknown_coordinates:
+                    # candidates 最多只有两组 table
+                    if candidates[0][p2] == candidates[-1][p2] and candidates[0][p2] != 'unknown':
+                        if candidates[0][p2] == 'mine':
+                            self.table[p2] = 'mine'
+                        else:
+                            self.table[p2] = 'question'
+
+            print('solve_by_oneassume_2times: ', point, idx, len(unknown_coordinates), is_ok)
+            if not is_ok:
+                must_safe.add(point)
+                break
+            table1 = self.table.copy()
+
+            '''
+            假设不是 mine
+            '''
+            self.table = table_bak.copy()
+            self.table[point] = 'question'
+            self.refresh_table(refresh_by_screenshot=False)
+
+            is_ok = True
+            for point2 in unknown_coordinates:
+                if point2 == point:
+                    continue
+
+                table2_bak = self.table.copy()
+
+                candidates = []
+
+                self.table[point2] = 'mine'
+                self.refresh_table(refresh_by_screenshot=False)
+                is_ok1 = self.deduce_table_with_assumptions(0, 0, constraints_bak, try_count=5)
+                if is_ok1:
+                    candidates.append(self.table.copy())
+
+                self.table = table2_bak.copy()
+                self.table[point2] = 'question'
+                self.refresh_table(refresh_by_screenshot=False)
+                is_ok2 = self.deduce_table_with_assumptions(0, 0, constraints_bak, try_count=5)
+                if is_ok2:
+                    candidates.append(self.table.copy())
+
+                # 如果 candidates 为空，说明外面第一层的假设就不行，那么直接退出
+                if len(candidates) == 0:
+                    is_ok = False
+                    break
+
+                self.table = table2_bak.copy()
+                for p2 in unknown_coordinates:
+                    # candidates 最多只有两组 table
+                    if candidates[0][p2] == candidates[-1][p2] and candidates[0][p2] != 'unknown':
+                        if candidates[0][p2] == 'mine':
+                            self.table[p2] = 'mine'
+                        else:
+                            self.table[p2] = 'question'
+            if not is_ok:
+                must_mine.add(point)
+                break
+            table2 = self.table.copy()
+
+            '''
+            查看有哪些点能是相同的，推出必然
+            '''
+            for p2 in unknown_coordinates:
+                if table1[p2] == table2[p2] and table1[p2] != 'unknown':
+                    if table1[p2] == 'mine':
+                        must_mine.add(p2)
+                    else:
+                        must_safe.add(p2)
+            if len(must_mine) > 0 or len(must_safe) > 0:
+                break
+
+        self.table = table_bak.copy()
+        self.refresh_table(refresh_by_screenshot=False)
+
+        return must_mine, must_safe
                 
 
     def solve_by_force(self, depth: int, max_depth: int, old_constraints: ConstraintsDict, constraints: ConstraintsDict, thresh: int, max_count: int = None):
@@ -833,12 +1264,10 @@ class Weeper:
                 if score < thresh:
                     scores.append(score)
                     coordinates_list.append(coordinates)
-
-            # 只有第一层才会多进行选择
-            elif depth == 0 and max_mine_count - min_mine_count < 3:
+            elif (min_mine_count < 3 and max_mine_count < 5):
                 score = math.comb(len(coordinates), min_mine_count)
                 if score < thresh:
-                    scores.append(score * 100)
+                    scores.append(score * 1000)
                     coordinates_list.append(coordinates)
 
         # 排序，优先选择 scores 最低的
@@ -851,7 +1280,7 @@ class Weeper:
             coordinates_list = coordinates_list[:max_count]
 
         # 为了加速，每次猜测之后都保存结果，顶多保存 8x8=64 份，内存是够用的
-        record_tables = dict()
+        record_tables = self.record_tables.copy() if depth == 0 else {}
 
         # 每次尝试去暴力遍历，直到找到一个确定解
         for i in range(len(coordinates_list)):
@@ -1224,55 +1653,68 @@ if __name__ == "__main__":
     is_D2 = False
     is_A = False
     is_H = False
-    is_L = True
+    is_L = False
+    is_N = False
+    is_X = False
+    is_P = False
+    is_E = True
+    is_X2 = False
+    is_K = False
 
     weeper = Weeper(
         None, mine_total=26, 
         is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, 
         is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, 
         is_M=is_M, is_T2=is_T2, is_D2=is_D2, is_A=is_A,
-        is_H=is_H, is_L=is_L
+        is_H=is_H, is_L=is_L, is_N=is_N, is_X=is_X,
+        is_P=is_P, is_E=is_E, is_X2=is_X2, is_K=is_K,
     )
     weeper.solve(100)
-    weeper.window_analyzer.click_goto_next_level()
 
-    # table = np.array([
-    #     ['?', '2', '*', '*', '*', '*', '?', ' '],
-    #     ['0', '?', '*', '?', '?', '*', ' ', ' '],
-    #     ['?', '1', '2', '3', '?', ' ', ' ', ' '],
-    #     ['1', '?', '3', '*', '*', '?', ' ', '0'],
-    #     ['?', '*', '*', '?', '*', '*', '4', '?'],
-    #     [' ', ' ', ' ', ' ', '*', ' ', ' ', ' '],
-    #     [' ', ' ', ' ', ' ', '*', ' ', ' ', ' '],
-    #     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-    # ]).astype(object)
+    # table_str = '''
+    # -----------------------------
+    # | 1 |   | ? |   |   | ? | * |
+    # -----------------------------
+    # |   | 1 | 2 | 2 |   | 2 | 2 |
+    # -----------------------------
+    # |   |   | 2 | * |   |   |   |
+    # -----------------------------
+    # |   |   | 2 | 2 |   |   |   |
+    # -----------------------------
+    # | 1 |   | 2 | 1 | * | * |   |
+    # -----------------------------
+    # | 1 |   |   | * | * | 2 | 2 |
+    # -----------------------------
+    # | ? |   | ? |   | 2 | * | 1 |
+    # -----------------------------
+    # '''
 
-    # # '2'-> 2, ?->question, ' '->unknown, '*'->mine
+    # table_strs = table_str.split('\n')
+    # tables = []
+    # for i in range(2, len(table_strs)-1, 2):
+    #     now_line = table_strs[i].split('|')
+    #     tables.append([x.strip() for x in now_line[1:-1]])
+
+    # table = np.array(tables).astype(object)
     # for i in range(table.shape[0]):
     #     for j in range(table.shape[1]):
     #         if table[i, j] == '?':
     #             table[i, j] = 'question'
-    #         elif table[i, j] == ' ':
+    #         elif table[i, j] == '':
     #             table[i, j] = 'unknown'
     #         elif table[i, j] == '*':
     #             table[i, j] = 'mine'
     #         else:
     #             table[i, j] = table[i, j]
 
-    # weeper = Weeper(table, mine_total=26, is_Q=is_Q, is_C=is_C)
+    # weeper = Weeper(
+    #     table, mine_total=20, 
+    #     is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, 
+    #     is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, 
+    #     is_M=is_M, is_T2=is_T2, is_D2=is_D2, is_A=is_A,
+    #     is_H=is_H, is_L=is_L, is_N=is_N, is_X=is_X,
+    #     is_P=is_P, is_E=is_E
+    # )
     # weeper.refresh_table(refresh_by_screenshot=False)
     # weeper.print_table(weeper.table)
-    # is_done = weeper.solve_by_backtracking(depth=0, is_in_backtracking=False)
-    # print(is_done)
-
-    # weeper.refresh_table(refresh_by_screenshot=False)
-    # weeper.print_table(weeper.table)
-    # constraints = weeper.create_table_constraints(weeper.table, weeper.mine_count)
-
-    # for _ in range(5):
-    #     weeper.refresh_constraints(constraints, 500)
-    #     print(f'len(constraints): {len(constraints)}')
-    #     for coordinates, (min_mine_count, max_mine_count) in constraints.items():
-    #         print(f'coordinates: {coordinates}, {min_mine_count} ~ {max_mine_count}')
-
-    # # weeper.solve_one()
+    # weeper.solve_one()

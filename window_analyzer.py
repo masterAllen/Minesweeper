@@ -100,6 +100,7 @@ class WindowAnalyzer:
         从图像中解析表格。
         """
         screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+        # cv2.imwrite("screenshot.png", screenshot)
 
         rows, cols = screenshot.shape[0:2]
         self.table_left_top = [cols*2//10, rows*2//10]
