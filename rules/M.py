@@ -25,18 +25,18 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
 
                 sum_dict[Constraint(unknown_coordinates)] = mine_count
 
-    '''
-    循环，让 SUM 最后收敛
-    '''
-    sum_dict_bak = sum_dict.copy()
+    # '''
+    # 循环，让 SUM 最后收敛
+    # '''
+    # sum_dict_bak = sum_dict.copy()
 
-    # 这里和 utils 的 refresh constraints 不同，我们只考虑那些完全包含的部分
-    for A, mineA in sum_dict_bak.items():
-        for B, mineB in sum_dict_bak.items():
-            A_only = A - B
-            B_only = B - A
-            if len(A_only) == 0 and len(B_only) != 0:
-                sum_dict[B_only] = mineB-mineA
+    # # 这里和 utils 的 refresh constraints 不同，我们只考虑那些完全包含的部分
+    # for A, mineA in sum_dict_bak.items():
+    #     for B, mineB in sum_dict_bak.items():
+    #         A_only = A - B
+    #         B_only = B - A
+    #         if len(A_only) == 0 and len(B_only) != 0:
+    #             sum_dict[B_only] = mineB-mineA
 
     '''
     检查 SUM 中的约束
