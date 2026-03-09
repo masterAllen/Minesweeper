@@ -45,7 +45,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
             setA = set(A)
             for B, B_counts in count_dict_bak.items():
                 setB = set(B)
-                key = tuple(sorted(setB - setA))
+                key = Constraint(setB - setA)
 
                 # 只有 A 是 B 的子集，并且没有遇到过才会更新
                 if setA < setB and key not in count_dict:
