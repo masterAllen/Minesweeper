@@ -72,7 +72,8 @@ def create_constraints(table: np.ndarray, mine_count: int) -> dict:
         # 使用通用函数找到所有与 not_mine 四连通的区域
         connected_regions = utils.find_all_connected_regions(
             table, known_coordinates, connected_type=4,
-            allowed_cell_types={'question', '0', '1', '2', '3', '4', '5', '6', '7', '8'}
+            cell_types={'unknown', 'mine'},
+            types_is_allowed=False
         )
 
         for connected_region in connected_regions:
@@ -95,7 +96,7 @@ def create_constraints(table: np.ndarray, mine_count: int) -> dict:
     mine_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'mine']
     connected_regions = utils.find_all_connected_regions(
         table, mine_coordinates, connected_type=4,
-        allowed_cell_types={'mine'}
+        cell_types={'mine'}
     )
     for connected_region in connected_regions:
         # 每个区域要有一个 x 或者 y 坐标是临界区域
@@ -127,11 +128,12 @@ def is_legal(table: np.ndarray, mine_count: int, weeper=None) -> bool:
     # 使用通用函数找到所有与 not_mine 四连通的区域
     connected_regions = utils.find_all_connected_regions(
         table, known_coordinates, connected_type=4,
-        allowed_cell_types={'unknown', 'question', '0', '1', '2', '3', '4', '5', '6', '7', '8'}
+        cell_types={'mine'},
+        types_is_allowed=False
     )
     if len(connected_regions) > 1:
         # weeper.print_table(table)
-        # print(f'connected_regions > 1, connected_regions = {connected_regions}')
+        print(f'connected_regions > 1, connected_regions = {connected_regions}')
         return False
 
     # 2. 雷区域与题板外部四方向联通 --> 每个雷 BFS，unkown 也可以通过，最后组成的区域要有一个在临界上
@@ -139,7 +141,7 @@ def is_legal(table: np.ndarray, mine_count: int, weeper=None) -> bool:
     mine_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'mine']
     connected_regions = utils.find_all_connected_regions(
         table, mine_coordinates, connected_type=4,
-        allowed_cell_types={'mine', 'unknown'}
+        cell_types={'mine', 'unknown'}
     )
     for connected_region in connected_regions:
         # 每个区域要有一个 x 或者 y 坐标是临界区域
@@ -149,7 +151,7 @@ def is_legal(table: np.ndarray, mine_count: int, weeper=None) -> bool:
                 is_ok = True
                 break
         if not is_ok:
-            # print(f'connected_region = {connected_region} 没有在临界上')
+            print(f'connected_region = {connected_region} 没有在临界上')
             return False
     
     return True
