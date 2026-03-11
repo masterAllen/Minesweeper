@@ -5,10 +5,16 @@ def get_eight_directions(coordinate: tuple[int, int], shape: tuple[int, int]) ->
     """
     返回八连通的坐标：上下左右 + 四个对角线
     """
+    # directions = [
+    #     (-1, -1), (-1, 0), (-1, 1),  # 上左、上、上右
+    #     (0, -1),           (0, 1),    # 左、右
+    #     (1, -1),  (1, 0),  (1, 1)     # 下左、下、下右
+    # ]
+
+    # 按照顺时针来
     directions = [
-        (-1, -1), (-1, 0), (-1, 1),  # 上左、上、上右
-        (0, -1),           (0, 1),    # 左、右
-        (1, -1),  (1, 0),  (1, 1)     # 下左、下、下右
+        (-1, -1), (-1, 0), (-1, 1), (0, 1), 
+        (1, 1), (1, 0), (1, -1), (0, -1)
     ]
 
     results = []
@@ -80,7 +86,22 @@ def get_cross2_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -
         results.append(coord)
     return results
 
-def bfs_connected_region(table: np.ndarray, start_coords: list, connected_type: int, allowed_cell_types: set) -> set:
+def get_cross1_directions(coordinate: tuple[int, int], shape: tuple[int, int]) -> list[tuple[int, int]]:
+    """
+    返回小十字的坐标：周围一格十字
+    """
+    directions = [
+        (-1, 0), (1, 0), (0, -1), (0, 1)
+    ]
+    results = []
+    for dx, dy in directions:
+        coord = (coordinate[0] + dx, coordinate[1] + dy)
+        if coord[0] < 0 or coord[0] >= shape[0] or coord[1] < 0 or coord[1] >= shape[1]:
+            continue
+        results.append(coord)
+    return results
+
+def bfs_connected_region(table: np.ndarray, start_coords: list, connected_type: int, cell_types: set, types_is_allowed: bool = True) -> set:
     """
     使用 BFS 找到从起始坐标开始的四/八连通区域
     
@@ -88,7 +109,8 @@ def bfs_connected_region(table: np.ndarray, start_coords: list, connected_type: 
         table: 表格
         start_coords: 起始坐标列表（可以是单个坐标的列表）
         connected_type: 4 - 四连通，8 - 八连通
-        allowed_cell_types: 允许通过的格子类型集合，例如 {'mine', 'unknown'}
+        cell_types: 允许通过的格子类型集合，例如 {'mine', 'unknown'}
+        types_is_allowed: 是否允许通过 cell_types 中的类型，True - 允许，False - 不允许
     
     Returns:
         连通区域的坐标集合
@@ -118,20 +140,25 @@ def bfs_connected_region(table: np.ndarray, start_coords: list, connected_type: 
             
             # 判断是否可以访问：检查格子类型是否在允许的集合中
             cell_value = table[neighbor[0], neighbor[1]]
-            if cell_value in allowed_cell_types:
-                connected_region.add(neighbor)
-                queue.append(neighbor)
+            if types_is_allowed:
+                if cell_value in cell_types:
+                    connected_region.add(neighbor)
+                    queue.append(neighbor)
+            else:
+                if cell_value not in cell_types:
+                    connected_region.add(neighbor)
+                    queue.append(neighbor)
     
     return connected_region
 
-def find_all_connected_regions(table: np.ndarray, target_coords: list, connected_type: int, allowed_cell_types: set) -> list:
+def find_all_connected_regions(table: np.ndarray, target_coords: list, connected_type: int, cell_types: set, types_is_allowed: bool = True) -> list:
     """
     找到所有分离的连通区域
     
     Args:
         table: 全局表格
         target_coords: 目标坐标列表（例如所有 mine 的坐标）
-        allowed_cell_types: 允许通过的格子类型集合，例如 {'mine'} 或 {'mine', 'unknown'}
+        cell_types: 允许通过的格子类型集合，例如 {'mine'} 或 {'mine', 'unknown'}
     
     Returns:
         连通区域列表，每个元素是一个坐标集合
@@ -149,7 +176,8 @@ def find_all_connected_regions(table: np.ndarray, target_coords: list, connected
         # 找到从当前坐标开始的连通区域
         connected_region = bfs_connected_region(
             table, [start_coord], connected_type,
-            allowed_cell_types=allowed_cell_types
+            cell_types=cell_types,
+            types_is_allowed=types_is_allowed
         )
         
         # 只保留目标坐标（例如只保留 mine）
@@ -287,3 +315,95 @@ def refresh_constraints(constraints: ConstraintsDict, new_constraints: Constrain
                 return_new_constraints[coordinates] = (min_mine_count, max_mine_count)
 
     return return_new_constraints
+
+
+def get_contiguous_regions(table: np.ndarray, start_point: tuple, valid_points: set()) -> set:
+    """
+    使用 BFS 找到从 start_point 开始的连续区域
+    其中区域只能是某个点为中心的八个格子，所以传入 valid_points 表示这八个格子
+    """
+    connected_region = set()
+    queue = [start_point]
+    
+    connected_region.add(start_point)
+    
+    while queue:
+        current = queue.pop(0)
+        neighbors = get_four_directions(current, table.shape)
+        for neighbor in neighbors:
+            if neighbor in valid_points and neighbor not in connected_region:
+                connected_region.add(neighbor)
+                queue.append(neighbor)
+    
+    return connected_region
+
+def resort_contiguous_regions(contiguous_regions: set) -> list:
+    '''
+    输入一组四联通的坐标，返回一个头部到另一个头部的列表
+    '''
+    if len(contiguous_regions) == 0:
+        return []
+    if len(contiguous_regions) == 1:
+        return list(contiguous_regions)
+    
+    # 四连通方向
+    directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+    
+    # 建立邻接关系：每个点在集合内的邻居
+    neighbors_map = {}
+    for coord in contiguous_regions:
+        neighbors_map[coord] = []
+        for dx, dy in directions:
+            neighbor = (coord[0] + dx, coord[1] + dy)
+            if neighbor in contiguous_regions:
+                neighbors_map[coord].append(neighbor)
+    
+    # 找到端点（只有一个邻居的点）
+    start = None
+    for coord, neighbors in neighbors_map.items():
+        if len(neighbors) == 1:
+            start = coord
+            break
+    
+    # 如果没有端点，说明是环形，任选一个起点
+    if start is None:
+        start = next(iter(contiguous_regions))
+    
+    # 从起点开始遍历，按顺序收集
+    result = [start]
+    visited = {start}
+    
+    while len(result) < len(contiguous_regions):
+        current = result[-1]
+        for neighbor in neighbors_map[current]:
+            if neighbor not in visited:
+                result.append(neighbor)
+                visited.add(neighbor)
+                break
+    
+    return result
+
+def hash_table(table: np.ndarray) -> str:
+    """
+    将 table 转换为哈希值
+    """
+    import hashlib
+    return hashlib.md5(table.tobytes()).hexdigest()
+
+def get_unknown_coordinates(table: np.ndarray, center: tuple, center_thresh: int=None) -> list:
+    """
+    获取 table 中 unknown 的坐标，根据 center 距离排序，并且筛选掉距离大于 center_thresh 的坐标
+    如果 center_thresh 为 None，则不筛选
+    """
+    if center_thresh is None:
+        center_thresh = 10000
+
+    unknown_coordinates = []
+    for i in range(table.shape[0]):
+        for j in range(table.shape[1]):
+            if table[i, j] == 'unknown':
+                l1_distance = max(abs(i - center[0]), abs(j - center[1]))
+                if l1_distance < center_thresh:
+                    unknown_coordinates.append((i, j))
+    unknown_coordinates.sort(key=lambda x: abs(x[0] - center[0]) + abs(x[1] - center[1]))
+    return unknown_coordinates

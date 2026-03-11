@@ -12,7 +12,7 @@ def create_constraints(table: np.ndarray, mine_count) -> dict:
     # 使用通用函数找到所有与 mine 四连通的区域
     mine_regions = utils.find_all_connected_regions(
         table, mine_coordinates, connected_type=4,
-        allowed_cell_types={'mine'}
+        cell_types={'mine'}
     )
 
     # 每个区域，找出首尾
@@ -76,7 +76,7 @@ def is_legal(table: np.ndarray, mine_count: int, mine_total: int, weeper) -> boo
     # 1. 可联通：使用通用函数找到所有与 mine 四连通的区域；要求区域只能为一个，并且里面的 unknown 数量要满足要求
     connected_regions = utils.find_all_connected_regions(
         table, mine_coordinates, connected_type=4,
-        allowed_cell_types={'mine', 'unknown'}
+        cell_types={'mine', 'unknown'}
     )
     if len(connected_regions) != 1:
         # print(f'len(connected_regions) = {len(connected_regions)} != 1')
@@ -94,7 +94,7 @@ def is_legal(table: np.ndarray, mine_count: int, mine_total: int, weeper) -> boo
     # 使用通用函数找到所有与 mine 四连通的区域
     mine_regions = utils.find_all_connected_regions(
         table, mine_coordinates, connected_type=4,
-        allowed_cell_types={'mine'}
+        cell_types={'mine'}
     )
 
     # 每个区域，找出首尾
@@ -162,8 +162,8 @@ def is_legal(table: np.ndarray, mine_count: int, mine_total: int, weeper) -> boo
             p2 = all_endpoints[can_extend_idxs[1]][0]
 
         # 计算他们的 BFS 区域
-        p1_region = utils.bfs_connected_region(table, [p1], connected_type=4, allowed_cell_types={'unknown'})
-        p2_region = utils.bfs_connected_region(table, [p2], connected_type=4, allowed_cell_types={'unknown'})
+        p1_region = utils.bfs_connected_region(table, [p1], connected_type=4, cell_types={'unknown'})
+        p2_region = utils.bfs_connected_region(table, [p2], connected_type=4, cell_types={'unknown'})
 
         # 其他区域，两个端点需要和它们连接上
         for i in range(len(all_endpoints)):
