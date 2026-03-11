@@ -1,3 +1,7 @@
 rules/__pycache__/
 __pycache__/
 Tesseract-3/
+cell_*
+thresh*
+test.txt
+test.py

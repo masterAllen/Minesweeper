@@ -58,10 +58,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
                     count_dict[key] = set_now
     
     for coordinates, set_counts in count_dict.items():
-        if len(set_counts) == 1:
-            results[Constraint(coordinates)] = (list(set_counts)[0], list(set_counts)[0])
-        else:
-            results[Constraint(coordinates)] = (min(set_counts), max(set_counts))
+        results[Constraint(coordinates)] = (min(set_counts), max(set_counts))
     
     return results
 
