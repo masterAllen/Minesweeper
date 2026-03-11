@@ -5,7 +5,7 @@
 import numpy as np
 import utils
 
-def create_constraints(table: np.ndarray) -> dict:
+def create_constraints(table: np.ndarray, mine_count: int) -> dict:
     # 如果某个点是雷，四周要有一个雷
     # --> 1. 修改为求解雷的联通区域（unknown不可通），每个区域的四周会一定要有雷
 
@@ -18,12 +18,12 @@ def create_constraints(table: np.ndarray) -> dict:
     mine_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'mine']
 
     # 1. 求解所有 mine 的联通区域（只考虑 mine，不考虑 unknown），然后每个联通区域的四周要有雷
-    if len(mine_coordinates) > 0:
+    if len(mine_coordinates) > 0 and mine_count > 0:
         
         # 找到所有分离的 mine 连通区域（只考虑 mine，不考虑 unknown）
         connected_regions = utils.find_all_connected_regions(
             table, mine_coordinates, connected_type=8,
-            allowed_cell_types={'mine'}  # 只允许通过 mine
+            cell_types={'mine'}  # 只允许通过 mine
         )
 
         # 现在 connected_regions 包含了所有分离的 mine 连通区域
@@ -45,7 +45,7 @@ def create_constraints(table: np.ndarray) -> dict:
         # 使用通用函数找到所有与 mine 八连通的区域（包括可以连接的 unknown）
         connected_regions = utils.find_all_connected_regions(
             table, [mine_coordinates[0]], connected_type=8,
-            allowed_cell_types={'mine', 'unknown'}
+            cell_types={'mine', 'unknown'}
         )
 
         if len(connected_regions) > 1:
@@ -88,7 +88,7 @@ def is_legal(table: np.ndarray) -> bool:
     # 使用通用函数找到连通区域（允许通过 mine 和 unknown）
     connected_region = utils.bfs_connected_region(
         table, [mine_coordinates[0]], connected_type=8,
-        allowed_cell_types={'mine', 'unknown'}
+        cell_types={'mine', 'unknown'}
     )
     
     # 检查是否所有雷都被访问到
