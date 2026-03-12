@@ -86,40 +86,22 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
             # print(f'center = ({i}, {j}), cell = {cell}, candidates = {candidates}')
 
             # 按照顺时针来
-            directions = [ (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1) ]
-            neigbor_coordinates = []
-            neigbor_str = ''
-            for direction in directions:
-                neighbor = (i + direction[0], j + direction[1])
-                neigbor_coordinates.append(neighbor)
-                # 如果不在表格范围内，当成是非雷
-                if neighbor[0] < 0 or neighbor[0] >= table.shape[0] or neighbor[1] < 0 or neighbor[1] >= table.shape[1]:
-                    neigbor_str += '0'
-                    continue
-
-                if table[neighbor] == 'mine':
-                    neigbor_str += '1'
-                elif table[neighbor] != 'unknown':
-                    neigbor_str += '0'
-                else:
-                    neigbor_str += '?'
+            neighbor_coordinates, neighbor_str = utils.get_eight_coordinates_force(table, (i, j))
             
-            # print(f'center = ({i}, {j}), neigbors = {neigbors}')
-
             # 根据已知条件 筛选 candidates
             for idx in range(8):
-                if neigbor_str[idx] == '1':
+                if neighbor_str[idx] == '1':
                     candidates = [c for c in candidates if c[idx] == '1']
-                elif neigbor_str[idx] == '0':
+                elif neighbor_str[idx] == '0':
                     candidates = [c for c in candidates if c[idx] == '0']
 
             if len(candidates) == 0:
-                raise ValueError(f'center = ({i}, {j}), neigbors = {neigbor_str}, but no candidates')
+                raise ValueError(f'center = ({i}, {j}), neigbors = {neighbor_str}, but no candidates')
 
             # 筛选可能性
-            for idx, coordinate in enumerate(neigbor_coordinates):
+            for idx, coordinate in enumerate(neighbor_coordinates):
                 # 检查 candidates 是否对应位置都一样
-                if neigbor_str[idx] == '?':
+                if neighbor_str[idx] == '?':
                     c0 = candidates[0][idx]
                     if all(c[idx] == c0 for c in candidates):
                         if c0 == '1':
@@ -136,99 +118,20 @@ def is_legal(table: np.ndarray) -> bool:
             if cell is None:
                 continue
 
-            # 1. 总雷数应该是 sum(cell) 个
-            found_mines, unknown_count = 0, 0
-            for neighbor in utils.get_eight_directions((i, j), table.shape):
-                if table[neighbor] == 'mine':
-                    found_mines += 1
-                if table[neighbor] == 'unknown':
-                    unknown_count += 1
-            if found_mines > sum(cell):
-                print(f'found_mines = {found_mines} > sum(cell) = {sum(cell)}')
-                return False
-            if found_mines + unknown_count < sum(cell):
-                print(f'found_mines + unknown_count = {found_mines} + {unknown_count} < sum(cell) = {sum(cell)}')
-                return False
+            # candidates: 所有可能的组合
+            cell.sort()
+            candidates = W_COMBINATIONS[tuple(cell)]
 
-            # 2. 检查各个联通域，和雷数的情况
-            candidate_regions = _get_candidate_regions(table, (i, j))
-
-            # 如果是环
-            if len(candidate_regions) == 8:
-                # 如果里面全是雷，那么跳过处理
-                if all(table[coordinate] == 'mine' for coordinate in candidate_regions[0]):
-                    return (cell[0] == 8)
-                
-                # 否则调整一下，第一个一定要是 unknown，末尾是 mine
-                idx = 0
-                while idx < len(candidate_regions[0]):
-                    idx2 = (idx - 1) % len(candidate_regions[0])
-                    if table[candidate_regions[0][idx]] == 'unknown':
-                        if table[candidate_regions[0][idx2]] == 'mine':
-                            break
-                    idx += 1
-                candidate_regions[0] = candidate_regions[0][idx:] + candidate_regions[0][:idx]
-
-            # 求解最大的连续雷
-            max_continuous_mine_num = 0
-            for region in candidate_regions:
-                mine_regions_idx = [[]]
-                for idx in range(0, len(region)):
-                    if table[region[idx]] == 'mine':
-                        mine_regions_idx[-1].append(idx)
-                    else:
-                        mine_regions_idx.append([])
-                mine_regions_idx = [r for r in mine_regions_idx if len(r) > 0]
-                for r in mine_regions_idx:
-                    max_continuous_mine_num = max(max_continuous_mine_num, len(r))
-
-            max_cell = max(cell)
-            if max_continuous_mine_num > max_cell:
-                print(f'max_continuous_mine_num = {max_continuous_mine_num} > max_cell = {max_cell}')
-                return False
+            # 按照顺时针来
+            neighbor_coordinates, neighbor_str = utils.get_eight_coordinates_force(table, (i, j))
             
-            # 求最小的连续雷（确定的）
-            min_continuous_mine_num = 8
-            for region in candidate_regions:
-                if all(table[coordinate] == 'mine' for coordinate in region):
-                    min_continuous_mine_num = min(min_continuous_mine_num, len(region))
-            min_cell = min(cell)
-            if min_continuous_mine_num < min_cell:
-                print(f'min_continuous_mine_num = {min_continuous_mine_num} < min_cell = {min_cell}')
+            # 根据已知条件 筛选 candidates
+            for idx in range(8):
+                if neighbor_str[idx] == '1':
+                    candidates = [c for c in candidates if c[idx] == '1']
+                elif neighbor_str[idx] == '0':
+                    candidates = [c for c in candidates if c[idx] == '0']
+
+            if len(candidates) == 0:
                 return False
-
-            # 如果已经确定好了，检查是否符合要求
-            for region in candidate_regions:
-                if all(table[coordinate] == 'mine' for coordinate in region):
-                    # 判断是否有，没有就报错
-                    if len(region) not in cell:
-                        print(f'center = ({i}, {j}), region = {region}, not in cell = {cell}')
-                        return False
-                    # 如果有就删除这个，防止有重复，比如 1, 3；而块是 1, 1
-                    cell.remove(len(region))
-
     return True
-
-def _get_candidate_regions(table: np.ndarray, center: tuple) -> list:
-    '''
-    输入一个坐标，返回周围八个格子的 mine/unknown 的连续区域
-    '''
-    # 使用通用函数找到所有与 mine 四连通的区域
-    neighbors = utils.get_eight_directions(center, table.shape)
-
-    valid_points = set()
-    for neighbor in neighbors:
-        if table[neighbor] == 'unknown' or table[neighbor] == 'mine':
-            valid_points.add(neighbor)
-
-    visited = set()
-    candidate_regions = []
-    for neighbor in valid_points:
-        if neighbor in visited:
-            continue
-        candidate_regions.append(utils.get_contiguous_regions(table, neighbor, valid_points))
-        visited.update(candidate_regions[-1])
-
-    for i, region in enumerate(candidate_regions):
-        candidate_regions[i] = utils.resort_contiguous_regions(region)
-    return candidate_regions
