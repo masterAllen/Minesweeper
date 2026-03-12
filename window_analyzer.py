@@ -11,7 +11,7 @@ from PIL import Image
 from typing import Tuple, List, Dict, Optional
 
 class WindowAnalyzer:
-    def __init__(self, title: str):
+    def __init__(self, title: str, use_ocr: bool = False):
         self.title = title
 
         # 窗口左上角位置
@@ -31,6 +31,15 @@ class WindowAnalyzer:
         self.window_width = window_rect.right - window_rect.left
         self.window_height = window_rect.bottom - window_rect.top
 
+        if use_ocr:
+            from paddleocr import PaddleOCR
+            os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+            # 初始化 PaddleOCR 实例
+            self.ocr = PaddleOCR(
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False
+            )
 
     def capture_window_screenshot(self, save_path=None):
         """
@@ -100,7 +109,7 @@ class WindowAnalyzer:
         从图像中解析表格。
         """
         screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-        # cv2.imwrite("screenshot.png", screenshot)
+        cv2.imwrite("screenshot.png", screenshot)
 
         rows, cols = screenshot.shape[0:2]
         self.table_left_top = [cols*2//10, rows*2//10]
@@ -146,7 +155,7 @@ class WindowAnalyzer:
             for j in range(len(col_border) - 1):
                 cell_img = tableimg[row_border[i]:row_border[i+1], col_border[j]:col_border[j+1]]
                 cell_img = cell_img[int(self.cell_h*0.1):int(self.cell_h*0.9), int(self.cell_w*0.1):int(self.cell_w*0.9)]
-                # cv2.imwrite(f'cell_{i}_{j}.png', cell_img)
+                cv2.imwrite(f'cell_{i}_{j}.png', cell_img)
                 table_data[i, j] = self._check_cell_data(cell_img)
         return table_data
 
@@ -191,36 +200,38 @@ class WindowAnalyzer:
         name = name.split('_')[1]
         return name
 
-        # # 检查是否是空，判断：全部为黑
-        # if np.all(cell_img[:, :, 1] < 32):
-        #     return 'Unknown'
+    def parse_base_information(self) -> Tuple[int, str, str]:
 
-        # # 检查是否是雷，判断：存在少量黄色
-        # if np.sum((cell_img[:, :, 2] < 10) & (cell_img[:, :, 1] > 200)) > 10:
-        #     return 'Mine'
-        
-        # # 检查是否是问号，判断：存在少量灰色
-        # if np.sum((cell_img[:, :, 1] < 132) & (cell_img[:, :, 1] > 100)) > 10:
-        #     return 'Question'
+        src = self.capture_window_screenshot()
+        src = np.array(src)
 
-        # # 否则就是数字
-        # import os
-        # import pytesseract
-        # pytesseract_dir = r'./Tesseract-3'
-        # pytesseract.pytesseract.tesseract_cmd = os.path.join(pytesseract_dir, 'tesseract.exe')
+        rows, cols = src.shape[0:2]
+        src = src[int(rows*0.1):int(rows*0.9), int(cols*0.02):int(cols*0.98)]
+        _, thresh = cv2.threshold(src, 180, 255, cv2.THRESH_BINARY)
 
-        # image = Image.open('./test.png')
-        # image = image.crop((500, 490, 600, 540))
-        # image = Image.open('./gray.png')
-        # image = image.convert('L')
-        # ratio = 300 // min(image.size)
-        # new_size = (image.size[0]*ratio, image.size[1]*ratio)
-        # image = image.resize(new_size, Image.Resampling.LANCZOS)
-        # image.save('./edit.png')
+        rows, cols = thresh.shape[0:2]
+        thresh = thresh[0:int(rows*0.3), 0:int(cols*0.4)]
 
-        # text = pytesseract.image_to_string(cell_img, config=f'{pytesseract_dir}\\tessdata\\configs\\digits').strip()
-        # return text
-            
+        rows, cols = thresh.shape[0:2]
+        ratio = 500 / rows
+        thresh = cv2.resize(thresh, (int(cols*ratio), int(rows*ratio)))
+        cv2.imwrite('thresh.png', thresh)
+
+        # 对示例图像执行 OCR 推理 
+        result = self.ocr.predict(thresh)
+        text = result[0]['rec_texts']
+
+        assert(text[0][0] == '[' and text[0][2] == ']')
+        assert(text[1][0] == '[' and text[1][2] == ']')
+        assert(text[2][0] == '[' and text[2][2] == ']')
+
+        type1 = text[1][1]
+        type2 = text[2][1]
+
+        row_text = text[0].replace('：', ':')
+        mine_total = int(row_text.split(':')[1].split()[0])
+
+        return mine_total, type1, type2
 
 
 if __name__ == "__main__":
@@ -232,6 +243,7 @@ if __name__ == "__main__":
     window_title = "Minesweeper Variants"  # 修改为您要分析的窗口标题
     
     analyzer = WindowAnalyzer(window_title)
+    # print(analyzer.parse_base_information())
     # analyzer.analyze_window_by_title()
     screenshot = analyzer.capture_window_screenshot()
     table_data = analyzer.parse_img_to_table(screenshot)
