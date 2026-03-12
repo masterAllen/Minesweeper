@@ -25,18 +25,18 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
 
                 sum_dict[Constraint(unknown_coordinates)] = mine_count
 
-    # '''
-    # 循环，让 SUM 最后收敛
-    # '''
-    # sum_dict_bak = sum_dict.copy()
+    '''
+    循环，让 SUM 最后收敛
+    '''
+    sum_dict_bak = sum_dict.copy()
 
-    # # 这里和 utils 的 refresh constraints 不同，我们只考虑那些完全包含的部分
-    # for A, mineA in sum_dict_bak.items():
-    #     for B, mineB in sum_dict_bak.items():
-    #         A_only = A - B
-    #         B_only = B - A
-    #         if len(A_only) == 0 and len(B_only) != 0:
-    #             sum_dict[B_only] = mineB-mineA
+    # 这里和 utils 的 refresh constraints 不同，我们只考虑那些完全包含的部分
+    for A, mineA in sum_dict_bak.items():
+        for B, mineB in sum_dict_bak.items():
+            A_only = A - B
+            B_only = B - A
+            if len(A_only) == 0 and len(B_only) != 0:
+                sum_dict[B_only] = mineB-mineA
 
     '''
     检查 SUM 中的约束
@@ -54,6 +54,8 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
 
         if mine_count < 0:
             raise ValueError(f'mine_count < 0: {mine_count}')
+
+        # 这问题可以约束为 2x + y = n，其中 0<=x<=x1，0<=y<=y1
             
         # m * odd +  n * 2 * even = mine_count
         # odd 的个数，最多是 mine_count 个
@@ -74,8 +76,15 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
         # even 的个数，最少是 ceil((mine_count - odd) / 2) 个
         min_even = max(0, math.ceil((mine_count - len(odd_coordinates)) / 2))
         max_even = min(mine_count // 2, len(even_coordinates))
+        if min_even > max_even:
+            raise ValueError(f'条件有问题，偶数有 {len(even_coordinates)}，奇数有 {len(odd_coordinates)}，总和为 {mine_count}')
         # print(f'even_coordinates = {even_coordinates}, min_even = {min_even}, max_even = {max_even}, coordinates = {coordinates}, mine_count = {mine_count}')
         results[tuple(even_coordinates)] = (min_even, max_even)
+
+        # 最终的总格子
+        min_total = mine_count - max_even
+        max_total = mine_count - min_even
+        results[coordinates] = (min_total, max_total)
 
     return results
 
@@ -92,9 +101,9 @@ def is_legal(table: np.ndarray) -> bool:
                         found_unknowns += utils.minenum_in_M(neighbor, table.shape)
 
                 if int(table[i, j]) < found_mines:
-                    print(f'found_mines = {found_mines}, int(table[{i}, {j}]) = {int(table[i, j])}')
+                    # print(f'found_mines = {found_mines}, int(table[{i}, {j}]) = {int(table[i, j])}')
                     return False
                 if int(table[i, j]) > found_mines + found_unknowns:
-                    print(f'found_mines = {found_mines}, found_unknowns = {found_unknowns}, int(table[i, j]) = {int(table[i, j])}')
+                    # print(f'found_mines = {found_mines}, found_unknowns = {found_unknowns}, int(table[i, j]) = {int(table[i, j])}')
                     return False
     return True
