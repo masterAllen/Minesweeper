@@ -244,31 +244,49 @@ def minenum_in_M(coordinate: tuple[int, int], shape: tuple[int, int]) -> int:
 
 def refresh_constraints(constraints: ConstraintsDict, new_constraints: ConstraintsDict) -> ConstraintsDict:
 
-    def two_constraints(A: Constraint, B: Constraint) -> tuple[Constraint, Constraint, Constraint]:
-        """
-        返回 A_only, B_only, A_and_B
-        """
-        A_only = A - B
-        B_only = B - A
-        A_and_B = A & B
-        return A_only, B_only, A_and_B
-
-
     constraints_bak = constraints.copy()
 
-    for A, (minA, maxA) in constraints_bak.items():
-        for B, (minB, maxB) in new_constraints.items():
-            A_only, B_only, A_and_B = two_constraints(A, B)
+    # 下面的代码相当于是双重循环，循环 A 和 B，去查看他们能否生成新的限制
+    # 为了优化性能，进行了反向索引，具体可以看 docs/performance_optimization.md
+    
+    # 优化：建立坐标到约束的反向索引，避免遍历所有约束对
+    coord_to_constraints = {}  # 坐标 -> 包含该坐标的约束集合
+    for A in constraints_bak.keys():
+        for coord in A.coordinates:
+            if coord not in coord_to_constraints:
+                coord_to_constraints[coord] = set()
+            coord_to_constraints[coord].add(A)
+    
+    # 记录已处理的约束对，避免重复处理
+    processed_pairs = set()
+    
+    for B, (minB, maxB) in new_constraints.items():
+        # 找到所有可能与 B 有交集的约束 A
+        candidate_As = set()
+        for coord in B.coordinates:
+            if coord in coord_to_constraints:
+                candidate_As.update(coord_to_constraints[coord])
+        
+        for A in candidate_As:
+            # 避免重复处理同一对约束
+            pair_key = (id(A), id(B)) if id(A) < id(B) else (id(B), id(A))
+            if pair_key in processed_pairs:
+                continue
+            processed_pairs.add(pair_key)
+            
+            minA, maxA = constraints_bak[A]
+            
+            # 计算交集和差集
+            A_and_B = A & B
+            if len(A_and_B) == 0:
+                continue
+            
+            A_only = A - B
+            B_only = B - A
 
             # A_and_B 范围
             z_min = max(0, minA - len(A_only), minB - len(B_only))
             z_max = min(maxA, maxB, len(A_and_B))
-
-            # if z_min > z_max:
-            # print(A, minA, maxA)
-            # print(B, minB, maxB)
-            # print(A_and_B, z_min, z_max)
-            # print('--------------------------------------------')
 
             try:
                 constraints[A_and_B] = (z_min, z_max)
@@ -276,18 +294,12 @@ def refresh_constraints(constraints: ConstraintsDict, new_constraints: Constrain
                 print(f'A: {A}, minA: {minA}, maxA: {maxA}')
                 print(f'B: {B}, minB: {minB}, maxB: {maxB}')
                 print(f'A_and_B: {A_and_B}, z_min: {z_min}, z_max: {z_max}')
-                print('--------------------------------------------')
                 raise ValueError(f'z_min > z_max: {z_min} > {z_max}')
-
 
             # A_only, B_only 范围
             x_min = max(0, minA - z_max)
             x_max = min(len(A_only), maxA - z_min)
 
-            # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
-            # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
-            # print(f'A_only: {A_only}, x_min: {x_min}, x_max: {x_max}')
-            # print('--------------------------------------------')
             try:
                 constraints[A_only] = (x_min, x_max)
             except:
@@ -295,15 +307,12 @@ def refresh_constraints(constraints: ConstraintsDict, new_constraints: Constrain
 
             y_min = max(0, minB - z_max)
             y_max = min(len(B_only), maxB - z_min)
-            # print(f'A: {A}, minA: {minA}, maxA: {maxA}')
-            # print(f'B: {B}, minB: {minB}, maxB: {maxB}')
-            # print(f'B_only: {B_only}, y_min: {y_min}, y_max: {y_max}')
-            # print('--------------------------------------------')
+
             try:
                 constraints[B_only] = (y_min, y_max)
             except:
                 raise ValueError(f'y_min > y_max: {y_min} > {y_max}')
-
+    
     # 找出新增的 constraints
     return_new_constraints = ConstraintsDict()
     for coordinates, (min_mine_count, max_mine_count) in constraints.items():
@@ -390,10 +399,11 @@ def hash_table(table: np.ndarray) -> str:
     import hashlib
     return hashlib.md5(table.tobytes()).hexdigest()
 
-def get_unknown_coordinates(table: np.ndarray, center: tuple, center_thresh: int=None) -> list:
+def get_unknown_coordinates(table: np.ndarray, center: tuple, center_thresh: int=None, remove_sparse: bool=True) -> list:
     """
     获取 table 中 unknown 的坐标，根据 center 距离排序，并且筛选掉距离大于 center_thresh 的坐标
     如果 center_thresh 为 None，则不筛选
+    remove_sparse: 去除周围 3x3 为空的坐标
     """
     if center_thresh is None:
         center_thresh = 10000
@@ -403,7 +413,38 @@ def get_unknown_coordinates(table: np.ndarray, center: tuple, center_thresh: int
         for j in range(table.shape[1]):
             if table[i, j] == 'unknown':
                 l1_distance = max(abs(i - center[0]), abs(j - center[1]))
-                if l1_distance < center_thresh:
-                    unknown_coordinates.append((i, j))
+                if l1_distance >= center_thresh:
+                    continue
+                
+                if remove_sparse:
+                    coordinates = get_eight_directions((i, j), table.shape)
+                    if all(table[c] == 'unknown' for c in coordinates):
+                        continue
+
+                unknown_coordinates.append((i, j))
+            
     unknown_coordinates.sort(key=lambda x: abs(x[0] - center[0]) + abs(x[1] - center[1]))
     return unknown_coordinates
+
+def get_eight_coordinates_force(table: np.ndarray, center: tuple) -> str:
+    # 按照顺时针来
+    i, j = center
+    directions = [ (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1) ]
+    neigbor_coordinates = []
+    neigbor_str = ''
+    for direction in directions:
+        neighbor = (i + direction[0], j + direction[1])
+        neigbor_coordinates.append(neighbor)
+        # 如果不在表格范围内，当成是非雷
+        if neighbor[0] < 0 or neighbor[0] >= table.shape[0] or neighbor[1] < 0 or neighbor[1] >= table.shape[1]:
+            neigbor_str += '0'
+            continue
+
+        if table[neighbor] == 'mine':
+            neigbor_str += '1'
+        elif table[neighbor] != 'unknown':
+            neigbor_str += '0'
+        else:
+            neigbor_str += '?'
+    
+    return neigbor_coordinates, neigbor_str

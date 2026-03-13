@@ -1,45 +1,61 @@
 from typing import Iterator
 
 class Constraint:
+    """
+    优化后的约束类，使用 frozenset 作为内部存储
+    避免重复排序和 set 转换
+    """
+    __slots__ = ('_coords_set', '_coords_tuple', '_hash')
+    
     def __init__(self, coordinates):
-        # self.coordinates = tuple(coordinates)
-        # 按照顺序排序
-        coordinates = list(coordinates)
-        coordinates_sorted = sorted(coordinates, key=lambda x: (x[0], x[1]))
-        self.coordinates = tuple(coordinates_sorted)
+        """
+        Args:
+            coordinates: 坐标列表/元组/frozenset
+        """
+        # 直接用 frozenset 存储，避免重复转换
+        if isinstance(coordinates, frozenset):
+            self._coords_set = coordinates
+        else:
+            self._coords_set = frozenset(coordinates)
+        self._coords_tuple = None  # 延迟计算
+        self._hash = None  # 延迟计算
+    
+    @property
+    def coordinates(self):
+        """延迟排序，只在需要时才计算"""
+        if self._coords_tuple is None:
+            self._coords_tuple = tuple(sorted(self._coords_set, key=lambda x: (x[0], x[1])))
+        return self._coords_tuple
 
     def __repr__(self) -> str:
-        return f'{[x for x in self.coordinates]}'
+        return f'{list(self.coordinates)}'
 
     def __iter__(self) -> Iterator[tuple[int, int]]:
-        return iter(self.coordinates)
+        return iter(self._coords_set)
 
     def __sub__(self, other: 'Constraint') -> 'Constraint':
-        my_coordinates_set = set(self.coordinates)
-        other_coordinates_set = set(other.coordinates)
-        return Constraint(list(my_coordinates_set - other_coordinates_set))
+        # 直接用 frozenset 操作，避免创建中间对象
+        return Constraint(self._coords_set - other._coords_set)
 
     def __and__(self, other: 'Constraint') -> 'Constraint':
-        my_coordinates_set = set(self.coordinates)
-        other_coordinates_set = set(other.coordinates)
-        return Constraint(list(my_coordinates_set.intersection(other_coordinates_set)))
+        return Constraint(self._coords_set & other._coords_set)
 
     def __or__(self, other: 'Constraint') -> 'Constraint':
-        my_coordinates_set = set(self.coordinates)
-        other_coordinates_set = set(other.coordinates)
-        return Constraint(list(my_coordinates_set.union(other_coordinates_set)))
+        return Constraint(self._coords_set | other._coords_set)
 
     def is_subset(self, other: 'Constraint') -> bool:
-        return set(self.coordinates).issubset(set(other.coordinates))
+        return self._coords_set.issubset(other._coords_set)
 
     def __len__(self) -> int:
-        return len(self.coordinates)
+        return len(self._coords_set)
 
     def __hash__(self) -> int:
-        return hash(self.coordinates)
+        if self._hash is None:
+            self._hash = hash(self._coords_set)
+        return self._hash
 
     def __eq__(self, other: 'Constraint') -> bool:
-        return set(self.coordinates) == set(other.coordinates)
+        return self._coords_set == other._coords_set
 
 
 class ConstraintsDict(dict):
