@@ -76,7 +76,7 @@ class Weeper:
         self.record_tables = dict()
 
         # 最新更新的坐标
-        self.newest_coordinates = (5, 5)
+        self.newest_coordinates = (2, 5)
 
     def _start_keyboard_listener(self):
         """启动键盘监听线程，监听空格键，按下时直接强制退出"""
@@ -278,14 +278,14 @@ class Weeper:
 
     def init(self):
         if self.is_plus:
-            mine_total, type1, type2 = self.window_analyzer.parse_base_information()
+            mine_total, types = self.window_analyzer.parse_base_information()
             self.mine_total = mine_total
-            self._set_rule_flags(type1, type2)
+            self._set_rule_flags(types)
 
         self.refresh_table(refresh_by_screenshot=True)
         # self.mine_count = self.mine_total
 
-    def _set_rule_flags(self, type1: str, type2: str):
+    def _set_rule_flags(self, types: list[str]):
         """根据 type1 和 type2 设置对应的规则标志"""
         # 规则字符到属性名的映射（支持单字符和带撇号的规则）
         rule_map = {
@@ -313,12 +313,12 @@ class Weeper:
             setattr(self, attr_name, False)
         
         # 根据 type1 和 type2 设置对应的为 True
-        for type_char in [type1, type2]:
+        for type_char in types:
             type_char = type_char.upper().strip()
             if type_char in rule_map:
                 setattr(self, rule_map[type_char], True)
         
-        print(f"规则设置完成: type1={type1}, type2={type2}")
+        print(f"规则设置完成: types={types}")
         
     '''
     根据现有表格，推出确定解
@@ -415,7 +415,7 @@ class Weeper:
             safe_marked = set()
 
             if len(mine_marked) == 0 and len(safe_marked) == 0:
-                for max_depth in range(1):
+                for max_depth in range(2):
                     self.solve_by_oneassume(traverse_all=True, depth=1, max_depth=max_depth)
 
                     # 检查是否有新的解
@@ -438,7 +438,7 @@ class Weeper:
                 safe_marked.update(s_safe_marked)
 
             if len(mine_marked) == 0 and len(safe_marked) == 0:
-                for max_depth in range(1, 4):
+                for max_depth in range(2, 4):
                     self.solve_by_oneassume(traverse_all=True, depth=1, max_depth=max_depth)
 
                     # 检查是否有新的解
@@ -594,8 +594,9 @@ class Weeper:
         # 但是当未知格少的时候，考虑还是多一些
         center_thresh = None
         if self.unknown_count > 16 and depth != 1:
-            center_thresh = 3
-        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=center_thresh)
+            center_thresh = 5
+        remove_sparse = True
+        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=center_thresh, remove_sparse=remove_sparse)
 
         for idx, point in enumerate(unknown_coordinates):
             if self.table[point] != 'unknown':
@@ -662,7 +663,8 @@ class Weeper:
                     if self.table[p2] != 'unknown':
                         return True
 
-        self.newest_coordinates = unknown_coordinates[0]
+        if len(unknown_coordinates) > 0:
+            self.newest_coordinates = unknown_coordinates[0]
         return True
 
 
@@ -823,7 +825,7 @@ class Weeper:
         table_copy = self.table.copy()
 
         # 选择距离最近的点
-        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=None)
+        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=None, remove_sparse=True)
         for coordinate in unknown_coordinates:
 
             self.table = table_copy.copy()
@@ -1061,7 +1063,7 @@ class Weeper:
 
 if __name__ == "__main__":
     is_V = False
-    is_Q = False
+    is_Q = True
     is_C = False
     is_T = False
     is_O = False
@@ -1073,7 +1075,7 @@ if __name__ == "__main__":
     is_D2 = False
     is_A = False
     is_H = False
-    is_L = False
+    is_L = True
     is_N = False
     is_X = False
     is_P = False
@@ -1081,11 +1083,11 @@ if __name__ == "__main__":
     is_X2 = False
     is_K = False
     is_W2 = False
-    is_E2 = True
+    is_E2 = False
     is_W = False
 
     weeper = Weeper(
-        None, mine_total=26, is_plus=False,
+        None, mine_total=26, is_plus=True,
         is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, 
         is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, 
         is_M=is_M, is_T2=is_T2, is_D2=is_D2, is_A=is_A,
