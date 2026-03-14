@@ -55,6 +55,10 @@ def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> Constraint
         if mine_count < 0:
             raise ValueError(f'mine_count < 0: {mine_count}')
 
+        if mine_count == 0:
+            results[Constraint(coordinates)] = (0, 0)
+            return results
+
         # 这问题可以约束为 2x + y = n，其中 0<=x<=x1，0<=y<=y1
             
         # m * odd +  n * 2 * even = mine_count
