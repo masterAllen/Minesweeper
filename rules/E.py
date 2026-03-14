@@ -5,7 +5,7 @@ import numpy as np
 import utils
 from constraint import Constraint, ConstraintsDict
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     '''
     1. 首先对每个格子创建约束
     2. 如果格子和格子之间相邻，其实可以进行扩散
@@ -19,7 +19,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     # 比如 ... 10 5 ...，可以知道 10 的格子水平方向最多只有五个
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'E' in table_rules[i, j]:
                 coordinates, max_values, min_values = get_eyesight_result(table, (i, j))
 
                 n = int(table[i, j])
@@ -64,7 +64,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     results = ConstraintsDict()
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'E' in table_rules[i, j]:
                 coordinates, max_values, min_values = get_eyesight_result(table, (i, j))
 
                 # 各个方向上的情况，
@@ -143,11 +143,11 @@ def _merge_range(old_range, new_range):
     return (max(old_min, new_min), min(old_max, new_max))
 
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     # 遍历所有格子，创建约束
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'E' in table_rules[i, j]:
                 # 获取上下左右，四个方向的 unknown 坐标，并且获取他们的最大值
                 coordinates, max_values, min_values = get_eyesight_result(table, (i, j))
 

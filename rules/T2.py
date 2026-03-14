@@ -5,7 +5,7 @@ import numpy as np
 import utils
 from constraint import Constraint, ConstraintsDict
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     results = ConstraintsDict()
 
     for i in range(table.shape[0]):
@@ -41,7 +41,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     return results
 
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     """
     检查当前雷的坐标是否有三连，如果有则返回 False
     四个方向：水平、垂直、左上-右下对角线、右上-左下对角线

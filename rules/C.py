@@ -5,7 +5,7 @@
 import numpy as np
 import utils
 
-def create_constraints(table: np.ndarray, mine_count: int) -> dict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray, mine_count: int) -> dict:
     # 如果某个点是雷，四周要有一个雷
     # --> 1. 修改为求解雷的联通区域（unknown不可通），每个区域的四周会一定要有雷
 
@@ -65,7 +65,7 @@ def create_constraints(table: np.ndarray, mine_count: int) -> dict:
     return results
 
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     """
     检查当前雷的坐标是否形成八连通区域（八连通：上下左右 + 四个对角线方向）
     允许通过 unknown 格子连接，但不能通过数字或 question 格子连接

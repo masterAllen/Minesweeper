@@ -6,13 +6,15 @@ import utils
 from constraint import Constraint, ConstraintsDict
 
 def translate_cell(cell: str):
-    if cell.isdigit():
-        return int(cell)
-    if cell.startswith('-'):
-        return int(cell)
+    if cell == '0':
+        return 0
+    if cell.startswith('H'):
+        return int(cell[1:]) * (-1)
+    if cell.startswith('V'):
+        return int(cell[1:]) * (1)
     return None
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     '''
     1. 首先对每个格子创建约束
     2. 如果格子和格子之间相邻，其实可以进行扩散
@@ -147,7 +149,7 @@ def _merge_range(old_range, new_range):
     return (max(old_min, new_min), min(old_max, new_max))
 
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     # 遍历所有格子，创建约束
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):

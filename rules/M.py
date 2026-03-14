@@ -6,7 +6,7 @@ import math
 import utils
 from constraint import ConstraintsDict, Constraint
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     # 遍历所有格子，创建约束
     '''
     先计算各个格子组合的 SUM，然后根据 SUM 创建约束
@@ -14,7 +14,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     sum_dict = dict()
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'M' in table_rules[i, j]:
                 unknown_coordinates = []
                 mine_count = int(table[i, j])
                 for neighbor in utils.get_eight_directions((i, j), table.shape):
@@ -88,10 +88,10 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
 
     return results
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'M' in table_rules[i, j]:
                 found_mines = 0
                 found_unknowns = 0
                 for neighbor in utils.get_eight_directions((i, j), table.shape):

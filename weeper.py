@@ -26,20 +26,31 @@ except ImportError:
 from rules import V, Q, C, T, O, D, S, B, M, T2, D2, A, H, L, N, X, P, E, X2, K, W2, E2, W
 from constraint import Constraint, ConstraintsDict
 import utils
+import settings
 
 class Weeper:
-    def __init__(self, table: np.ndarray, mine_total: int, is_plus: bool = False, \
+    def __init__(self, table: np.ndarray, mine_total: int, is_plus: bool = False, is_hash: bool = False, \
         is_V: bool = True, is_Q: bool = False, is_C: bool = False, is_T: bool = False, \
         is_O: bool = False, is_D: bool = False, is_S: bool = False, is_B: bool = False, \
         is_M: bool = False, is_T2: bool = False, is_D2: bool = False, is_A: bool = False, \
         is_H: bool = False, is_L: bool = False, is_N: bool = False, is_X: bool = False, \
         is_P: bool = False, is_E: bool = False, is_X2: bool = False, is_K: bool = False, \
         is_W2: bool = False, is_E2: bool = False, is_W: bool = False) -> None:
+        '''
+        table: 当前的表格；如果为 None，则会自行调用 pywinauto 截图并解析
+        mine_total: 总雷数；如果 is_plus 为 True，此时会自动解析
+        is_plus: [+] 模式，即随机产生多种组合的题目；遇到 [+] 需要打开此开关；
+                    为 True 时会调用 pywinauto 自行解析有哪些组合，此时 mine_total 和 后面的一系列 is_* 没有作用；
+        is_hash: [#] 模式，即每个格子遵守的规则是不同的；遇到 [#] 时需要打开此开关
+        '''
         self.is_plus = is_plus
+        self.is_hash = is_hash
+
         self.mine_total = mine_total
         self.mine_count = mine_total
         self.unknown_count = None
         self.table = table
+        self.table_rules = None
 
         self.is_V = is_V
         self.is_Q = is_Q
@@ -65,10 +76,18 @@ class Weeper:
         self.is_E2 = is_E2
         self.is_W = is_W
 
+        # 如果是 [+] 或者 [#] 模式，上面的格式全部先变为 False
+        if is_plus or is_hash:
+            for key in settings.all_rules:
+                setattr(self, f'is_{key}', False)
+
+        if table is not None: 
+            self.table_rules = self._init_rule_table(table.shape)
+
         if table is None:
             window_title = "Minesweeper Variants"
             self.window_analyzer = WindowAnalyzer(window_title, is_plus)
-        
+
         # 启动键盘监听线程
         if KEYBOARD_AVAILABLE:
             self._start_keyboard_listener()
@@ -76,7 +95,7 @@ class Weeper:
         self.record_tables = dict()
 
         # 最新更新的坐标
-        self.newest_coordinates = (2, 5)
+        self.newest_coordinates = (6, 7)
 
     def _start_keyboard_listener(self):
         """启动键盘监听线程，监听空格键，按下时直接强制退出"""
@@ -97,8 +116,21 @@ class Weeper:
     
     def refresh_table(self, refresh_by_screenshot: bool = True):
         if refresh_by_screenshot:
+            time1 = time.time()
             screenshot = self.window_analyzer.capture_window_screenshot()
-            self.table = self.window_analyzer.parse_img_to_table(screenshot)
+            print(f'capture_window_screenshot time: {time.time() - time1}')
+            
+            time2 = time.time()
+            self.table, special_table_rules = self.window_analyzer.parse_img_to_table(screenshot)
+            print(f'parse_img_to_table time: {time.time() - time2}')
+
+            self.table_rules = self._init_rule_table(self.table.shape)
+
+            # 如果是 [#] 模式，那么把每个单元格各自遵守的规则加进去；其实可以不用判断 is_hash 的，因为正常的时候，如果发现右下角为空，返回的时候空字符串 
+            if self.is_hash:
+                for i in range(self.table.shape[0]):
+                    for j in range(self.table.shape[1]):
+                        self.table_rules[i, j].add(special_table_rules[i, j])
 
         # 统计 unknown 数量
         self.unknown_count = np.sum(self.table == 'unknown')
@@ -124,57 +156,59 @@ class Weeper:
             print('|')
         print('-' * (table.shape[1] * 9 + 1))
 
-    def check_rules(self, table: np.ndarray) -> bool:
+        print(self.table_rules)
+
+    def check_rules(self, table: np.ndarray, table_rules: np.ndarray) -> bool:
         """
-        检查当前表格是否符合所有规则
+        检查当前表格是否符合所有规则；table_rules 是每个单元格各自遵守的规则
         """
         if self.mine_count < 0 or self.unknown_count < 0:
             return False
-        if self.is_V and not V.is_legal(table):
+        if self.is_V and not V.is_legal(table, table_rules):
             return False
-        if self.is_Q and not Q.is_legal(table):
+        if self.is_Q and not Q.is_legal(table, table_rules):
             return False
-        if self.is_C and not C.is_legal(table):
+        if self.is_C and not C.is_legal(table, table_rules):
             return False
-        if self.is_T and not T.is_legal(table):
+        if self.is_T and not T.is_legal(table, table_rules):
             return False
-        if self.is_O and not O.is_legal(table, self.mine_count, self):
+        if self.is_O and not O.is_legal(table, table_rules):
             return False
-        if self.is_D and not D.is_legal(table, self):
+        if self.is_D and not D.is_legal(table, table_rules):
             return False
-        if self.is_S and not S.is_legal(table, self.mine_count, self.mine_total, self):
+        if self.is_S and not S.is_legal(table, table_rules, self.mine_count, self.mine_total):
             return False
-        if self.is_B and not B.is_legal(table, self.mine_total):
+        if self.is_B and not B.is_legal(table, table_rules, self.mine_total):
             return False
-        if self.is_M and not M.is_legal(table):
+        if self.is_M and not M.is_legal(table, table_rules):
             return False
-        if self.is_T2 and not T2.is_legal(table):
+        if self.is_T2 and not T2.is_legal(table, table_rules):
             return False
-        if self.is_D2 and not D2.is_legal(table):
+        if self.is_D2 and not D2.is_legal(table, table_rules):
             return False
-        if self.is_A and not A.is_legal(table):
+        if self.is_A and not A.is_legal(table, table_rules):
             return False
-        if self.is_H and not H.is_legal(table):
+        if self.is_H and not H.is_legal(table, table_rules):
             return False
-        if self.is_L and not L.is_legal(table):
+        if self.is_L and not L.is_legal(table, table_rules):
             return False
-        if self.is_N and not N.is_legal(table):
+        if self.is_N and not N.is_legal(table, table_rules):
             return False
-        if self.is_X and not X.is_legal(table):
+        if self.is_X and not X.is_legal(table, table_rules):
             return False
-        if self.is_P and not P.is_legal(table):
+        if self.is_P and not P.is_legal(table, table_rules):
             return False
-        if self.is_E and not E.is_legal(table):
+        if self.is_E and not E.is_legal(table, table_rules):
             return False
-        if self.is_X2 and not X2.is_legal(table):
+        if self.is_X2 and not X2.is_legal(table, table_rules):
             return False
-        if self.is_K and not K.is_legal(table):
+        if self.is_K and not K.is_legal(table, table_rules):
             return False
-        if self.is_W2 and not W2.is_legal(table):
+        if self.is_W2 and not W2.is_legal(table, table_rules):
             return False
-        if self.is_E2 and not E2.is_legal(table):
+        if self.is_E2 and not E2.is_legal(table, table_rules):
             return False
-        if self.is_W and not W.is_legal(table):
+        if self.is_W and not W.is_legal(table, table_rules):
             return False
         
         return True
@@ -184,61 +218,61 @@ class Weeper:
         k --> 坐标集合
         v --> 雷的数量（最小值、最大值）
     '''
-    def create_table_constraints(self, table: np.ndarray, mine_count: int) -> ConstraintsDict:
+    def create_table_constraints(self, table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
         constraints = ConstraintsDict()
 
         if self.mine_count == 0:
-            self.check_rules(table)
+            self.check_rules(table, table_rules)
         
         # 收集各个规则的约束
         rule_constraints_list = []
         
         if self.is_V:
-            rule_constraints_list.append(V.create_constraints(table))
+            rule_constraints_list.append(V.create_constraints(table, table_rules))
         if self.is_Q:
-            rule_constraints_list.append(Q.create_constraints(table))
+            rule_constraints_list.append(Q.create_constraints(table, table_rules))
         if self.is_C:
-            rule_constraints_list.append(C.create_constraints(table, mine_count))
+            rule_constraints_list.append(C.create_constraints(table, table_rules, self.mine_count))
         if self.is_T:
-            rule_constraints_list.append(T.create_constraints(table))
+            rule_constraints_list.append(T.create_constraints(table, table_rules))
         if self.is_O:
-            rule_constraints_list.append(O.create_constraints(table, mine_count))
+            rule_constraints_list.append(O.create_constraints(table, table_rules, self.mine_count))
         if self.is_D:
-            rule_constraints_list.append(D.create_constraints(table))
+            rule_constraints_list.append(D.create_constraints(table, table_rules))
         if self.is_S:
-            rule_constraints_list.append(S.create_constraints(table, mine_count))
+            rule_constraints_list.append(S.create_constraints(table, table_rules, self.mine_count))
         if self.is_B:
-            rule_constraints_list.append(B.create_constraints(table, self.mine_total))
+            rule_constraints_list.append(B.create_constraints(table, table_rules, self.mine_total))
         if self.is_M:
-            rule_constraints_list.append(M.create_constraints(table))
+            rule_constraints_list.append(M.create_constraints(table, table_rules))
         if self.is_T2:
-            rule_constraints_list.append(T2.create_constraints(table))
+            rule_constraints_list.append(T2.create_constraints(table, table_rules))
         if self.is_D2:
-            rule_constraints_list.append(D2.create_constraints(table))
+            rule_constraints_list.append(D2.create_constraints(table, table_rules))
         if self.is_A:
-            rule_constraints_list.append(A.create_constraints(table))
+            rule_constraints_list.append(A.create_constraints(table, table_rules))
         if self.is_H:
-            rule_constraints_list.append(H.create_constraints(table))
+            rule_constraints_list.append(H.create_constraints(table, table_rules))
         if self.is_L:
-            rule_constraints_list.append(L.create_constraints(table))
+            rule_constraints_list.append(L.create_constraints(table, table_rules))
         if self.is_N:
-            rule_constraints_list.append(N.create_constraints(table))
+            rule_constraints_list.append(N.create_constraints(table, table_rules))
         if self.is_X:
-            rule_constraints_list.append(X.create_constraints(table))
+            rule_constraints_list.append(X.create_constraints(table, table_rules))
         if self.is_P:
-            rule_constraints_list.append(P.create_constraints(table))
+            rule_constraints_list.append(P.create_constraints(table, table_rules))
         if self.is_E:
-            rule_constraints_list.append(E.create_constraints(table))
+            rule_constraints_list.append(E.create_constraints(table, table_rules))
         if self.is_X2:
-            rule_constraints_list.append(X2.create_constraints(table))
+            rule_constraints_list.append(X2.create_constraints(table, table_rules))
         if self.is_K:
-            rule_constraints_list.append(K.create_constraints(table))
+            rule_constraints_list.append(K.create_constraints(table, table_rules))
         if self.is_W2:
-            rule_constraints_list.append(W2.create_constraints(table))
+            rule_constraints_list.append(W2.create_constraints(table, table_rules))
         if self.is_E2:
-            rule_constraints_list.append(E2.create_constraints(table))
+            rule_constraints_list.append(E2.create_constraints(table, table_rules))
         if self.is_W:
-            rule_constraints_list.append(W.create_constraints(table))
+            rule_constraints_list.append(W.create_constraints(table, table_rules))
 
         # 合并所有规则的约束
         for rule_constraints in rule_constraints_list:
@@ -277,13 +311,46 @@ class Weeper:
 
 
     def init(self):
+        # 如果是 [+] 模式，自动分析有哪些 is_*
         if self.is_plus:
+            time1 = time.time()
             mine_total, types = self.window_analyzer.parse_base_information()
+            print(f'parse_base_information time: {time.time() - time1}')
+
             self.mine_total = mine_total
             self._set_rule_flags(types)
 
+        # 如果是 [#] 模式，那些特殊的格式要设置为 True
+        if self.is_hash:
+            for rule in settings.rules_in_hash:
+                setattr(self, f'is_{rule}', True)
+
         self.refresh_table(refresh_by_screenshot=True)
-        # self.mine_count = self.mine_total
+
+    def _init_rule_table(self, table_shape: tuple[int, int]) -> np.ndarray:
+        table_rules = np.empty((table_shape[0], table_shape[1]), dtype=object)
+        for i in range(table_shape[0]):
+            for j in range(table_shape[1]):
+                table_rules[i, j] = set()
+
+        # 如果不是 [#] 模式，那么所有单元格遵守的规则都一样
+        if not self.is_hash:
+            considered_rules = set()
+            for rule in settings.all_rules:
+                if getattr(self, f'is_{rule}'):
+                    considered_rules.add(rule)
+            table_rules[:, :] = considered_rules
+            return table_rules
+
+        # 如果是 [#] 模式：
+        # 1. 对于不在 rules_in_hash 中的规则，所有单元格遵守的规则都一样；
+        # 2. 对于 rules_in_hash 中的规则，需要截图获取值的时候再加进去，也就是 refresh_table 的时候才会加进去
+        for rule in settings.all_rules:
+            if rule not in settings.rules_in_hash and getattr(self, f'is_{rule}'):
+                for i in range(table_shape[0]):
+                    for j in range(table_shape[1]):
+                        table_rules[i, j].add(rule)
+        return table_rules
 
     def _set_rule_flags(self, types: list[str]):
         """根据 type1 和 type2 设置对应的规则标志"""
@@ -301,16 +368,9 @@ class Weeper:
             '0': 'is_O', '5': 'is_S'
         }
         
-        # 所有规则属性列表
-        all_rule_attrs = [
-            'is_V', 'is_Q', 'is_C', 'is_T', 'is_O', 'is_D', 'is_S', 'is_B',
-            'is_M', 'is_T2', 'is_D2', 'is_A', 'is_H', 'is_L', 'is_N', 'is_X',
-            'is_P', 'is_E', 'is_X2', 'is_K', 'is_W2', 'is_E2', 'is_W'
-        ]
-        
         # 先把所有规则设置为 False
-        for attr_name in all_rule_attrs:
-            setattr(self, attr_name, False)
+        for attr_name in settings.all_rules:
+            setattr(self, f'is_{attr_name}', False)
         
         # 根据 type1 和 type2 设置对应的为 True
         for type_char in types:
@@ -339,7 +399,7 @@ class Weeper:
         mine_marked, safe_marked = set(), set()
         for _ in range(3):
             try:
-                constraints = self.create_table_constraints(self.table, self.mine_count)
+                constraints = self.create_table_constraints(self.table, self.table_rules)
             except:
                 import traceback
                 traceback.print_exc()
@@ -350,7 +410,7 @@ class Weeper:
                 # 这里的规则和主循环有所不同，这里强制循环多次，尽可能获得足够多的 Hints，这样确保暴力破解的时候覆盖全了
                 for _ in range(try_count):
                     new_constraints = self.refresh_constraints(constraints, new_constraints, 600)
-                    if len(new_constraints) == 0 or len(constraints) > 1000:
+                    if len(new_constraints) == 0 or len(constraints) > 800:
                         break
             except:
                 # 发生错误，那么就说明这个假设不应该存在，是错误
@@ -375,9 +435,9 @@ class Weeper:
                     self.table[coordinate[0], coordinate[1]] = 'question'
 
                 self.refresh_table(refresh_by_screenshot=False)
-                # self.print_table(self.table)
 
-                assert(self.check_rules(self.table))
+                self.print_table(self.table)
+                assert(self.check_rules(self.table, self.table_rules))
 
             except:
                 import traceback
@@ -400,8 +460,8 @@ class Weeper:
         if self.mine_count > self.unknown_count:
             raise ValueError(f'mine_count > unknown_count: {self.mine_count} > {self.unknown_count}')
 
-        if not self.check_rules(self.table):
-            raise ValueError(f'check_rules 失败')
+        if not self.check_rules(self.table, self.table_rules):
+            raise ValueError(f'check_rules(self.table, self.table_rules) 失败')
 
         # 退出条件：雷 = 0，unkown = 0
         if self.mine_count == 0 and self.unknown_count == 0:
@@ -429,6 +489,8 @@ class Weeper:
 
                     self.table = raw_table_bak.copy()
                     self.refresh_table(refresh_by_screenshot=False)
+                    if len(mine_marked) + len(safe_marked) > 0:
+                        break
 
             # 如果不可以，那么尝试用暴力 + rules 去求解
             if (len(mine_marked) == 0 and len(safe_marked) == 0):
@@ -455,9 +517,6 @@ class Weeper:
                     if len(mine_marked) + len(safe_marked) > 0:
                         break
             
-
-            # self.print_table(self.table)
-            # time.sleep(1000)
 
             # # 2. 如果不可以，那就小范围穷举，检查是否有的格子一定是雷或者一定是安全的
             # if (len(mine_marked) == 0 and len(safe_marked) == 0):
@@ -508,7 +567,7 @@ class Weeper:
             # 必须要在这里先刷新一下，这样可以满了之后就退出到下一关；没有这个，后面的 refresh_table 要截图识别就会失败（过关的时候有弹窗遮挡）
             self.refresh_table(refresh_by_screenshot=False)
             if self.mine_count == 0 and self.unknown_count == 0:
-                return self.check_rules(self.table)
+                return self.check_rules(self.table, self.table_rules)
 
             if len(safe_marked) > 0:
                 self.refresh_table(refresh_by_screenshot=True)
@@ -596,9 +655,12 @@ class Weeper:
         if self.unknown_count > 16 and depth != 1:
             center_thresh = 5
         remove_sparse = True
-        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=center_thresh, remove_sparse=remove_sparse)
+        possible_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=center_thresh, remove_sparse=remove_sparse)
 
-        for idx, point in enumerate(unknown_coordinates):
+        # 上面的 possible_coordinates 是有可能推出的坐标；这里的 unknown_coordinates 是所有的坐标，最后要统计这个看看有没有可以确定的
+        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, None, False)
+
+        for idx, point in enumerate(possible_coordinates):
             if self.table[point] != 'unknown':
                 continue
 
@@ -608,7 +670,7 @@ class Weeper:
             '''
             假设是 mine
             '''
-            print(f'   ' * (depth-1) + f'{point}, {idx}, {len(unknown_coordinates)}: mine')
+            print(f'   ' * (depth-1) + f'{point}, {idx}, {len(possible_coordinates)}: mine')
             self.table = table_bak.copy()
             self.table[point] = 'mine'
             self.newest_coordinates = point
@@ -624,7 +686,7 @@ class Weeper:
             '''
             假设不是 mine
             '''
-            print(f'   ' * (depth-1) + f'{point}, {idx}, {len(unknown_coordinates)}: safe')
+            print(f'   ' * (depth-1) + f'{point}, {idx}, {len(possible_coordinates)}: safe')
             self.table = table_bak.copy()
             self.table[point] = 'question'
             self.newest_coordinates = point
@@ -639,7 +701,7 @@ class Weeper:
             '''
             如果 candidates 为 0，说明这个推测必然不成立
             '''
-            print(f'   ' * (depth-1) + f'{point}, {idx}, {len(unknown_coordinates)}: {len(candidates)}')
+            print(f'   ' * (depth-1) + f'{point}, {idx}, {len(possible_coordinates)}: {len(candidates)}')
             if len(candidates) == 0:
                 return False
 
@@ -879,7 +941,7 @@ class Weeper:
 
             is_ok = True
             try:
-                assert(self.check_rules(self.table))
+                assert(self.check_rules(self.table, self.table_rules))
             except:
                 is_ok = False
             path_results[mine_coordinates] = is_ok
@@ -940,6 +1002,7 @@ class Weeper:
             my_print(f'----'*(depth+1) + f'--> Snake depth = {depth}，坐标: {coordinate}, 候选: {unknown_coordinates}, len(path_results): {len(path_results)}')
 
             is_ok = True
+
             # while True:
             #     try:
             #         constraints = self.create_table_constraints(self.table, self.mine_count)
@@ -966,7 +1029,7 @@ class Weeper:
             #     self.refresh_table(refresh_by_screenshot=False)
 
             try:
-                assert(self.check_rules(self.table))
+                assert(self.check_rules(self.table, self.table_rules))
             except:
                 path_results[now_mine_coordinates] = False
                 # import traceback
@@ -1049,7 +1112,7 @@ class Weeper:
                 self.refresh_table(refresh_by_screenshot=False)
 
                 try:
-                    is_resolvable = self.check_rules(self.table)
+                    is_resolvable = self.check_rules(self.table, self.table_rules)
                 except:
                     pass
                 if is_resolvable:
@@ -1063,7 +1126,7 @@ class Weeper:
 
 if __name__ == "__main__":
     is_V = False
-    is_Q = True
+    is_Q = False
     is_C = False
     is_T = False
     is_O = False
@@ -1075,7 +1138,7 @@ if __name__ == "__main__":
     is_D2 = False
     is_A = False
     is_H = False
-    is_L = True
+    is_L = False
     is_N = False
     is_X = False
     is_P = False
@@ -1087,7 +1150,7 @@ if __name__ == "__main__":
     is_W = False
 
     weeper = Weeper(
-        None, mine_total=26, is_plus=True,
+        None, mine_total=26, is_plus=True, is_hash=True,
         is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, 
         is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, 
         is_M=is_M, is_T2=is_T2, is_D2=is_D2, is_A=is_A,

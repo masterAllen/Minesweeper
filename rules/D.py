@@ -4,7 +4,7 @@
 import numpy as np
 import utils
 
-def create_constraints(table: np.ndarray) -> dict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> dict:
     results = dict()
 
     '''
@@ -107,7 +107,7 @@ def create_constraints(table: np.ndarray) -> dict:
 
     return results
 
-def is_legal(table: np.ndarray, weeper) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     # 横向检查
     for i in range(table.shape[0]):
         j = 0

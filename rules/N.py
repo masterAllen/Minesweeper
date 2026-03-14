@@ -6,14 +6,14 @@ import math
 import utils
 from constraint import ConstraintsDict, Constraint, ConstraintsDictV2
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     '''
     先得到各个格子组合的关系
     '''
     relations_dict = ConstraintsDictV2()
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'N' in table_rules[i, j]:
                 unknown_coordinates = []
                 # 奇数坐标、偶数坐标 的已知 mine 数目
                 found_mines = [0, 0]
@@ -118,10 +118,10 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     return results
 
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'N' in table_rules[i, j]:
                 # 奇数 unknown 坐标、偶数坐标
                 unknown_coordinates = [[], []]
                 # 奇数坐标、偶数坐标 的已知 mine 数目

@@ -5,7 +5,7 @@ import numpy as np
 import utils
 from constraint import Constraint, ConstraintsDict
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     results = ConstraintsDict()
 
     # 遍历所有格子，创建约束
@@ -26,7 +26,7 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     
     return results
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
             if table[i, j].isdigit():

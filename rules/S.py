@@ -4,7 +4,7 @@
 import numpy as np
 import utils
 
-def create_constraints(table: np.ndarray, mine_count) -> dict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray, mine_count) -> dict:
     results = dict()
 
     # 先找出雷的区域
@@ -67,7 +67,7 @@ def create_constraints(table: np.ndarray, mine_count) -> dict:
 
     return results
 
-def is_legal(table: np.ndarray, mine_count: int, mine_total: int, weeper) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray, mine_count: int, mine_total: int) -> bool:
     # 先找出雷的区域
     mine_coordinates = [(i, j) for i in range(table.shape[0]) for j in range(table.shape[1]) if table[i, j] == 'mine']
     if len(mine_coordinates) == 0:

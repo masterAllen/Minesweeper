@@ -4,7 +4,7 @@
 import numpy as np
 import utils
 
-def create_constraints(table: np.ndarray) -> dict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> dict:
     results = dict()
 
     directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
@@ -52,7 +52,7 @@ def create_constraints(table: np.ndarray) -> dict:
                     results[tuple(unknowns)] = (0, 2 - mine_count)
     return results
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     """
     检查当前雷的坐标是否有三连，如果有则返回 False
     四个方向：水平、垂直、左上-右下对角线、右上-左下对角线

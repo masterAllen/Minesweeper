@@ -5,13 +5,13 @@ import numpy as np
 import utils
 from constraint import Constraint, ConstraintsDict
 
-def create_constraints(table: np.ndarray) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
     results = ConstraintsDict()
 
     # 遍历所有格子，创建约束
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'V' in table_rules[i, j]:
 
                 coordinates = []
                 found_mines = 0
@@ -26,10 +26,10 @@ def create_constraints(table: np.ndarray) -> ConstraintsDict:
     
     return results
 
-def is_legal(table: np.ndarray) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     for i in range(table.shape[0]):
         for j in range(table.shape[1]):
-            if table[i, j].isdigit():
+            if table[i, j].isdigit() and 'V' in table_rules[i, j]:
                 found_mines = 0
                 found_unknowns = 0
                 for neighbor in utils.get_eight_directions((i, j), table.shape):

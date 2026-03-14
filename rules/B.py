@@ -5,7 +5,7 @@ import numpy as np
 import utils
 from constraint import ConstraintsDict
 
-def create_constraints(table: np.ndarray, mine_total) -> ConstraintsDict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray, mine_total) -> ConstraintsDict:
     results = ConstraintsDict()
 
     for i in range(table.shape[0]):
@@ -26,7 +26,7 @@ def create_constraints(table: np.ndarray, mine_total) -> ConstraintsDict:
 
     return results
 
-def is_legal(table: np.ndarray, mine_total: int) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray, mine_total: int) -> bool:
     for i in range(table.shape[0]):
         mine_count = len([j for j in range(table.shape[1]) if table[i, j] == 'mine'])
         if mine_count > mine_total // table.shape[0]:

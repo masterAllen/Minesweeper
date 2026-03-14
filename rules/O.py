@@ -4,7 +4,7 @@
 import numpy as np
 import utils
 
-def create_constraints(table: np.ndarray, mine_count: int) -> dict:
+def create_constraints(table: np.ndarray, table_rules: np.ndarray, mine_count: int) -> dict:
     results = dict()
 
     # 1. 非雷区域四方向联通
@@ -117,7 +117,7 @@ def create_constraints(table: np.ndarray, mine_count: int) -> dict:
         results[tuple(candidates)] = (1, len(candidates))
     return results
 
-def is_legal(table: np.ndarray, mine_count: int, weeper=None) -> bool:
+def is_legal(table: np.ndarray, table_rules: np.ndarray) -> bool:
     # 1. 已确定区域四方向联通
     known_coordinates = []
     for i in range(table.shape[0]):

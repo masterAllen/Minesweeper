@@ -40,7 +40,8 @@ def get_circular_mine_groups(mask: int) -> list:
 class CircularRuleBase(ABC):
     """圆环连续雷规则的基类"""
     
-    def __init__(self):
+    def __init__(self, name: str):
+        self.name = name
         self.combinations = self._make_combinations()
     
     @abstractmethod
@@ -87,14 +88,14 @@ class CircularRuleBase(ABC):
         """
         return None
     
-    def create_constraints(self, table: np.ndarray) -> ConstraintsDict:
+    def create_constraints(self, table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
         """创建约束"""
         results = ConstraintsDict()
 
         for i in range(table.shape[0]):
             for j in range(table.shape[1]):
                 key = self.translate_cell(table[i, j])
-                if key is None:
+                if key is None or self.name not in table_rules[i, j]:
                     continue
 
                 # 按照顺时针来
@@ -142,12 +143,12 @@ class CircularRuleBase(ABC):
 
         return results
 
-    def is_legal(self, table: np.ndarray) -> bool:
+    def is_legal(self, table: np.ndarray, table_rules: np.ndarray) -> bool:
         """检查表格是否合法"""
         for i in range(table.shape[0]):
             for j in range(table.shape[1]):
                 key = self.translate_cell(table[i, j])
-                if key is None:
+                if key is None or self.name not in table_rules[i, j]:
                     continue
 
                 # 按照顺时针来
