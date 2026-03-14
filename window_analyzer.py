@@ -7,7 +7,7 @@ import pywinauto
 from pywinauto import Application
 import numpy as np
 import cv2
-from PIL import Image
+from PIL import Image, ImageGrab
 from typing import Tuple, List, Dict, Optional
 
 class WindowAnalyzer:
@@ -22,8 +22,10 @@ class WindowAnalyzer:
         self.cell_w = None
         self.cell_h = None
 
-        app = Application(backend="uia").connect(title=self.title)
+        time1 = time.time()
+        app = Application(backend="win32").connect(title=self.title)
         self.window = app.window(title=self.title)
+        print(f'Find Window time: {time.time() - time1}')
 
         # 获取窗口在屏幕上左上角的位置
         window_rect = self.window.rectangle()
@@ -32,14 +34,15 @@ class WindowAnalyzer:
         self.window_height = window_rect.bottom - window_rect.top
 
         if use_ocr:
-            from paddleocr import PaddleOCR
-            os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
-            # 初始化 PaddleOCR 实例
-            self.ocr = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False
-            )
+            pass
+            # from paddleocr import PaddleOCR
+            # os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+            # # 初始化 PaddleOCR 实例
+            # self.ocr = PaddleOCR(
+            #     ocr_version="PP-OCRv4",
+            #     use_textline_orientation=False,
+            #     enable_mkldnn=True
+            # )
 
     def capture_window_screenshot(self, save_path=None):
         """
@@ -56,7 +59,11 @@ class WindowAnalyzer:
             pywinauto.mouse.click(coords=(temp_col, temp_row))
             
             print(f"正在截取窗口: {self.title}")
-            screenshot = self.window.capture_as_image()
+
+            # 使用 ImageGrab 按窗口坐标截图，避免 pywinauto UIA 下 capture_as_image() 的长时间延迟（约 25 秒）
+            left, top = self.win_left_top[0], self.win_left_top[1]
+            bbox = (left, top, left + self.window_width, top + self.window_height)
+            screenshot = ImageGrab.grab(bbox=bbox)
             if save_path:
                 screenshot.save(save_path)
 
@@ -104,21 +111,21 @@ class WindowAnalyzer:
         time.sleep(1)
 
 
-    def parse_img_to_table(self, screenshot: Image.Image) -> np.ndarray:
+    def parse_img_to_table(self, screenshot: Image.Image) -> tuple[np.ndarray, np.ndarray]:
         """
-        从图像中解析表格。
+        从图像中解析表格，返回表格中内容、表格的规则(针对 [#] 的设计，这个模式下不同格子遵守的规则并不一致)
         """
         screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-        cv2.imwrite("screenshot.png", screenshot)
+        # cv2.imwrite("screenshot.png", screenshot)
 
         rows, cols = screenshot.shape[0:2]
-        self.table_left_top = [cols*2//10, rows*2//10]
-        self.table_right_bottom = [cols*8//10, rows*95//100]
+        self.table_left_top = [cols*3//10, rows*2//10]
+        self.table_right_bottom = [cols*7//10, rows*95//100]
         tableimg = screenshot[
             self.table_left_top[1]:self.table_right_bottom[1], 
             self.table_left_top[0]:self.table_right_bottom[0]
         ]
-        # cv2.imwrite("table.png", tableimg)
+        cv2.imwrite("table.png", tableimg)
 
         '''
         边界提取，本来是打算做直线检测等复杂算法，但是想想算了...
@@ -127,37 +134,42 @@ class WindowAnalyzer:
         rows, cols = tableimg.shape[0:2]
 
         # 从上往下：中间开始 1/4 到 3/4 之间
-        row_border = []
-        prev_is_border = False
+        row_borders = [[]]
         for i in range(rows):
-            is_border = np.all(tableimg[i, int(cols*0.4):int(cols*0.6), 1] > 200)
-            if is_border and not prev_is_border:
-                row_border.append(i)
-            prev_is_border = is_border
+            is_border = np.all(tableimg[i, int(cols*0.4):int(cols*0.6), 1] > 180)
+            if is_border:
+                row_borders[-1].append(i)
+            else:
+                row_borders.append([])
+        row_borders = [border for border in row_borders if len(border) > 0]
+        row_borders = [(row_borders[i][-1]+1, row_borders[i+1][0]) for i in range(len(row_borders)-1)]
         
         # 从左往右：上下 1/4 到 3/4 之间
-        col_border = []
-        prev_is_border = False
+        col_borders = [[]]
         for j in range(cols):
-            is_border = np.all(tableimg[int(rows*0.4):int(rows*0.6), j, 1] > 200)
-            if is_border and not prev_is_border:
-                col_border.append(j)
-            prev_is_border = is_border
+            is_border = np.all(tableimg[int(rows*0.4):int(rows*0.6), j, 1] > 180)
+            if is_border:
+                col_borders[-1].append(j)
+            else:
+                col_borders.append([])
+        col_borders = [border for border in col_borders if len(border) > 0]
+        col_borders = [(col_borders[j][-1]+1, col_borders[j+1][0]) for j in range(len(col_borders)-1)]
 
-        self.table_left_top = [self.table_left_top[0] + col_border[0], self.table_left_top[1] + row_border[0]]
-        self.cell_w, self.cell_h = col_border[1] - col_border[0], row_border[1] - row_border[0]
+        self.table_left_top = [self.table_left_top[0] + col_borders[0][0], self.table_left_top[1] + row_borders[0][0]]
+        self.cell_w, self.cell_h = col_borders[0][1] - col_borders[0][0], row_borders[0][1] - row_borders[0][0]
 
         '''
         每个单元格解析
         '''
-        table_data = np.empty((len(row_border) - 1, len(col_border) - 1), dtype=object)
-        for i in range(len(row_border) - 1):
-            for j in range(len(col_border) - 1):
-                cell_img = tableimg[row_border[i]:row_border[i+1], col_border[j]:col_border[j+1]]
-                cell_img = cell_img[int(self.cell_h*0.1):int(self.cell_h*0.9), int(self.cell_w*0.1):int(self.cell_w*0.9)]
+        table_data = np.empty((len(row_borders), len(col_borders)), dtype=object)
+        table_rule = np.empty((len(row_borders), len(col_borders)), dtype=object)
+        for i, (row_lo, row_hi) in enumerate(row_borders):
+            for j, (col_lo, col_hi) in enumerate(col_borders):
+                cell_img = tableimg[row_lo:row_hi, col_lo:col_hi]
                 cv2.imwrite(f'cell_{i}_{j}.png', cell_img)
-                table_data[i, j] = self._check_cell_data(cell_img)
-        return table_data
+                table_data[i, j], table_rule[i, j] = self._check_cell_data(cell_img)
+
+        return table_data, table_rule
 
     def click_cell(self, i, j, left_or_right):
         row = self.win_left_top[1] + self.table_left_top[1] + int((i+0.5) * self.cell_h)
@@ -166,23 +178,27 @@ class WindowAnalyzer:
         time.sleep(0.2)
         pywinauto.mouse.click(coords=(col, row), button=left_or_right)
 
-    def _check_cell_data(self, cell_img: np.ndarray) -> str:
+    def _check_cell_data(self, cell_img: np.ndarray) -> tuple[str, set]:
+        '''
+        输入某个单元格图片，返回该单元格的内容、遵守的规则
+        内容：string，如：'unknown', 'mine', 'question', '1', '1x1'([W] rule), '-2'([E'] rule)
+        规则：string，单元格图片右下角代表的图，比如 'V', 'Q', 'C'
+        '''
+
         assert(len(cell_img.shape) == 3)
+        cell_img = cv2.cvtColor(cell_img, cv2.COLOR_BGR2GRAY)
 
-        # # 检查是否是空，判断：全部为黑
-        # if np.all(cell_img[:, :, 1] < 32):
-        #     return 'unknown'
-        # if np.all((70 < cell_img[:, :, 1]) & (cell_img[:, :, 1] < 82)):
-        #     return 'unknown'
-
-        # 遍历 Template
-        is_first = True
+        # 遍历 Template，这里可以用 Map 进行加速，但是感觉没必要了
         best, best_score = None, 1e9
         for fname in os.listdir('templates'):
             template = cv2.imread(f'templates/{fname}')
-            if is_first:
-                matched = cv2.resize(cell_img, (template.shape[1], template.shape[0]))
-                # is_first = False
+            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+
+            rows, cols = template.shape[0:2]
+            template[int(rows*0.7):int(rows*1.0), int(cols*0.7):int(cols*1.0)] = 0
+
+            matched = cv2.resize(cell_img, (rows, cols))
+            matched[int(rows*0.7):int(rows*1.0), int(cols*0.7):int(cols*1.0)] = 0
 
             # inter = np.logical_and(matched, template).sum()
             # union = np.logical_or(matched, template).sum()
@@ -198,40 +214,78 @@ class WindowAnalyzer:
 
         name = best[:best.rfind('.')]
         name = name.split('_')[1]
-        return name
 
-    def parse_base_information(self) -> Tuple[int, str, str]:
+        # 遍历 hashtags 寻找规则
+        best, best_score = None, 1e9
+        for fname in os.listdir('hashtags'):
+            template = cv2.imread(f'hashtags/{fname}')
+            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+
+            rows, cols = template.shape[0:2]
+            matched = cv2.resize(cell_img, (rows, cols))
+
+            # 只比较右小角
+            template = template[int(rows*0.7):int(rows*1.0), int(cols*0.7):int(cols*1.0)]
+            matched = matched[int(rows*0.7):int(rows*1.0), int(cols*0.7):int(cols*1.0)]
+
+            diff = matched.astype(float) - template.astype(float)
+            score = np.mean(diff**2)
+            if score < best_score:
+                best, best_score = fname, score
+
+        rule = best[:best.rfind('.')]
+        rule = rule.split('_')[1]
+        if rule == '0':
+            rule = ''
+
+        return name, rule
+
+    def parse_base_information(self) -> Tuple[int, List[str]]:
+        """
+        解析游戏基本信息
+        返回: (雷数, 规则类型列表)
+        例如: "[C][W]8x8-26-11739" -> (26, ['C', 'W'])
+        """
+        import re
+        import pytesseract
 
         src = self.capture_window_screenshot()
         src = np.array(src)
+        src = cv2.cvtColor(src, cv2.COLOR_RGB2GRAY)
 
         rows, cols = src.shape[0:2]
-        src = src[int(rows*0.1):int(rows*0.9), int(cols*0.02):int(cols*0.98)]
-        _, thresh = cv2.threshold(src, 180, 255, cv2.THRESH_BINARY)
 
-        rows, cols = thresh.shape[0:2]
-        thresh = thresh[0:int(rows*0.3), 0:int(cols*0.4)]
+        src = src[int(rows*0.9):int(rows*0.98), int(cols*0.06):int(cols*0.27)]
+        # cv2.imwrite('src.png', src)
 
-        rows, cols = thresh.shape[0:2]
-        ratio = 500 / rows
-        thresh = cv2.resize(thresh, (int(cols*ratio), int(rows*ratio)))
-        cv2.imwrite('thresh.png', thresh)
+        # 使用 Pytesseract 识别
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        text = pytesseract.image_to_string(src, lang='eng').strip()
+        print(f"OCR 识别结果: {text}")
 
-        # 对示例图像执行 OCR 推理 
-        result = self.ocr.predict(thresh)
-        text = result[0]['rec_texts']
+        # 解析规则类型: 提取所有 [X] 或 [X'] 格式的内容
+        # 注意: pytesseract 经常把 [ 或 ] 错误识别成 I，所以用 [\[I] 和 [\]I] 来匹配
+        rule_pattern = r"[\[I]([A-Za-z]'?)[\]I]"
+        rules = re.findall(rule_pattern, text)
+        rules = [r.upper() for r in rules]  # 统一大写
+        
+        # 解析雷数: 格式为 NxN-雷数-编号，提取中间的数字
+        # 例如 8x8-26-11739 中的 26
+        mine_pattern = r"\d+x\d+-(\d+)-"
+        mine_match = re.search(mine_pattern, text)
+        if mine_match:
+            mine_total = int(mine_match.group(1))
+        
+        print(f"解析结果: 雷数={mine_total}, 规则={rules}")
+        return mine_total, rules
 
-        assert(text[0][0] == '[' and text[0][2] == ']')
-        assert(text[1][0] == '[' and text[1][2] == ']')
-        assert(text[2][0] == '[' and text[2][2] == ']')
+        # type1_img = src[int(rows*0.16):int(rows*0.19), int(cols*0.02):int(cols*0.06)]
+        # type2_img = src[int(rows*0.19):int(rows*0.23), int(cols*0.02):int(cols*0.06)]
+        # num_img = src[int(rows*0.12):int(rows*0.155), int(cols*0.11):int(cols*0.132)]
 
-        type1 = text[1][1]
-        type2 = text[2][1]
-
-        row_text = text[0].replace('：', ':')
-        mine_total = int(row_text.split(':')[1].split()[0])
-
-        return mine_total, type1, type2
+        # cv2.imwrite('type1.png', type1_img)
+        # cv2.imwrite('type2.png', type2_img)
+        # cv2.imwrite('num.png', num_img)
 
 
 if __name__ == "__main__":
@@ -246,8 +300,8 @@ if __name__ == "__main__":
     # print(analyzer.parse_base_information())
     # analyzer.analyze_window_by_title()
     screenshot = analyzer.capture_window_screenshot()
-    table_data = analyzer.parse_img_to_table(screenshot)
-    print(table_data)
+    table_data, table_rule = analyzer.parse_img_to_table(screenshot)
+    # print(table_data)
 
     # analyzer.click_goto_next_level()
     # analyzer.click_skip_this_level()
