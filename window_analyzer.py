@@ -301,7 +301,8 @@ if __name__ == "__main__":
     # analyzer.analyze_window_by_title()
     screenshot = analyzer.capture_window_screenshot()
     table_data, table_rule = analyzer.parse_img_to_table(screenshot)
-    # print(table_data)
+    print(table_data)
+    print(table_rule)
 
     # analyzer.click_goto_next_level()
     # analyzer.click_skip_this_level()
