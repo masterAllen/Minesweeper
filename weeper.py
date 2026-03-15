@@ -27,6 +27,7 @@ from rules import V, Q, C, T, O, D, S, B, M, T2, D2, A, H, L, N, X, P, E, X2, K,
 from constraint import Constraint, ConstraintsDict
 import utils
 import settings
+import send_mail
 
 class Weeper:
     def __init__(self, table: np.ndarray, mine_total: int, is_plus: bool = False, is_hash: bool = False, \
@@ -598,8 +599,13 @@ class Weeper:
             if is_done:
                 self.window_analyzer.click_goto_next_level()
             else:
+                # 如果出错，发送邮件通知我
+                send_mail.notify_solve_error(i, t2 - t1)
                 exit(0)
                 # self.window_analyzer.click_skip_this_level()
+
+        # 如果结束，发送邮件通知我
+        send_mail.notify_solve_complete(rounds)
 
 
     def solve_by_ensure(self, constraints: ConstraintsDict) -> tuple[set, set]:
@@ -887,7 +893,7 @@ class Weeper:
         table_copy = self.table.copy()
 
         # 选择距离最近的点
-        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=None, remove_sparse=True)
+        unknown_coordinates = utils.get_unknown_coordinates(self.table, self.newest_coordinates, center_thresh=None, remove_sparse=False)
         for coordinate in unknown_coordinates:
 
             self.table = table_copy.copy()
@@ -1125,7 +1131,7 @@ class Weeper:
 
 
 if __name__ == "__main__":
-    is_V = False
+    is_V = True
     is_Q = False
     is_C = False
     is_T = False
@@ -1150,7 +1156,7 @@ if __name__ == "__main__":
     is_W = False
 
     weeper = Weeper(
-        None, mine_total=26, is_plus=True, is_hash=True,
+        None, mine_total=None, is_plus=True, is_hash=False,
         is_V=is_V, is_Q=is_Q, is_C=is_C, is_T=is_T, 
         is_O=is_O, is_D=is_D, is_S=is_S, is_B=is_B, 
         is_M=is_M, is_T2=is_T2, is_D2=is_D2, is_A=is_A,

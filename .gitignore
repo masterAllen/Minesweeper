@@ -1,7 +1,14 @@
 rules/__pycache__/
 __pycache__/
 Tesseract-3/
+templates2/
+official/
 cell_*
 thresh*
 test.txt
 test.py
+screenshot.png
+table.png
+
+# 本地邮件配置（含密码），切勿提交
+.env
