@@ -87,6 +87,32 @@ class CircularRuleBase(ABC):
         子类可以覆盖此方法
         """
         return None
+
+    def get_eight_coordinates_force(self, table: np.ndarray, center: tuple):
+        """
+        顺时针获取某个点周围的八个各自的坐标和对应状态组成的字符串
+        Note: 如果是边界点，超出表格范围的坐标被认为是非雷
+        """
+        i, j = center
+        directions = [ (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1) ]
+        neigbor_coordinates = []
+        neigbor_str = ''
+        for direction in directions:
+            neighbor = (i + direction[0], j + direction[1])
+            neigbor_coordinates.append(neighbor)
+            # 如果不在表格范围内，当成是非雷
+            if neighbor[0] < 0 or neighbor[0] >= table.shape[0] or neighbor[1] < 0 or neighbor[1] >= table.shape[1]:
+                neigbor_str += '0'
+                continue
+
+            if table[neighbor] == 'mine':
+                neigbor_str += '1'
+            elif table[neighbor] != 'unknown':
+                neigbor_str += '0'
+            else:
+                neigbor_str += '?'
+        
+        return neigbor_coordinates, neigbor_str
     
     def create_constraints(self, table: np.ndarray, table_rules: np.ndarray) -> ConstraintsDict:
         """创建约束"""
@@ -99,7 +125,7 @@ class CircularRuleBase(ABC):
                     continue
 
                 # 按照顺时针来
-                neighbor_coordinates, neighbor_str = utils.get_eight_coordinates_force(table, (i, j))
+                neighbor_coordinates, neighbor_str = self.get_eight_coordinates_force(table, (i, j))
                 
                 # 获取候选组合
                 candidates = self.combinations.get(key, [])
@@ -152,7 +178,7 @@ class CircularRuleBase(ABC):
                     continue
 
                 # 按照顺时针来
-                neighbor_coordinates, neighbor_str = utils.get_eight_coordinates_force(table, (i, j))
+                neighbor_coordinates, neighbor_str = self.get_eight_coordinates_force(table, (i, j))
                 
                 candidates = self.combinations.get(key, [])
                 if not candidates:

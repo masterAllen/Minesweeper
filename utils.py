@@ -399,52 +399,60 @@ def hash_table(table: np.ndarray) -> str:
     import hashlib
     return hashlib.md5(table.tobytes()).hexdigest()
 
-def get_unknown_coordinates(table: np.ndarray, center: tuple, center_thresh: int=None, remove_sparse: bool=True) -> list:
+def get_mine_coordinates(table: np.ndarray) -> tuple[tuple[int, int]]:
     """
-    获取 table 中 unknown 的坐标，根据 center 距离排序，并且筛选掉距离大于 center_thresh 的坐标
-    如果 center_thresh 为 None，则不筛选
-    remove_sparse: 去除周围 3x3 为空的坐标
+    获取表格中所有标记为 mine 的格子的坐标
     """
-    if center_thresh is None:
-        center_thresh = 10000
+    coords = np.argwhere(table == 'mine')
+    coords = tuple((int(coord[0]), int(coord[1])) for coord in coords)
+    return coords
 
-    unknown_coordinates = []
-    for i in range(table.shape[0]):
-        for j in range(table.shape[1]):
-            if table[i, j] == 'unknown':
-                l1_distance = max(abs(i - center[0]), abs(j - center[1]))
-                if l1_distance >= center_thresh:
-                    continue
-                
-                if remove_sparse:
-                    coordinates = get_eight_directions((i, j), table.shape)
-                    if all(table[c] == 'unknown' for c in coordinates):
-                        continue
+def get_unknown_coordinates(table: np.ndarray, center: tuple[int, int], center_thresh: int | None = None, remove_sparse: bool = True) -> list[tuple[int, int]]:
+    """
+    获取表格中所有标记为 unknown 的格子的坐标，并按优先级排序。
 
-                unknown_coordinates.append((i, j))
-            
-    unknown_coordinates.sort(key=lambda x: abs(x[0] - center[0]) + abs(x[1] - center[1]))
-    return unknown_coordinates
+    Args:
+        table: 扫雷局面的二维数组
+        center: 中心点坐标 (row, col)，用于距离计算和范围筛选
+        center_thresh: 距离阈值，超出该值的坐标将被排除；None 表示不限制
+        remove_sparse: 是否排除孤立格子（八邻域内全是 unknown 的格子）
 
-def get_eight_coordinates_force(table: np.ndarray, center: tuple) -> str:
-    # 按照顺时针来
-    i, j = center
-    directions = [ (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1) ]
-    neigbor_coordinates = []
-    neigbor_str = ''
-    for direction in directions:
-        neighbor = (i + direction[0], j + direction[1])
-        neigbor_coordinates.append(neighbor)
-        # 如果不在表格范围内，当成是非雷
-        if neighbor[0] < 0 or neighbor[0] >= table.shape[0] or neighbor[1] < 0 or neighbor[1] >= table.shape[1]:
-            neigbor_str += '0'
-            continue
+    Returns:
+        筛选并排序后的 unknown 坐标列表。排序规则：
+        1. 周围已知点越多越靠前（信息更丰富）
+        2. 同等级下，距中心 Manhattan 距离越近越靠前
+    """
+    threshold = center_thresh if center_thresh is not None else 10000
+    rows, cols = table.shape
+    center_row, center_col = center
 
-        if table[neighbor] == 'mine':
-            neigbor_str += '1'
-        elif table[neighbor] != 'unknown':
-            neigbor_str += '0'
-        else:
-            neigbor_str += '?'
-    
-    return neigbor_coordinates, neigbor_str
+    # (coord, known_count)：收集时统一用 get_eight_directions 计算一次
+    candidates: list[tuple[tuple[int, int], int]] = []
+    for i in range(rows):
+        for j in range(cols):
+            if table[i, j] != 'unknown':
+                continue
+
+            # Chebyshev 距离（棋盘距离）筛选
+            dist_chebyshev = max(abs(i - center_row), abs(j - center_col))
+            if dist_chebyshev >= threshold:
+                continue
+
+            coord = (i, j)
+            neighbors = get_eight_directions(coord, table.shape)
+            known_count = sum(1 for r, c in neighbors if table[r, c] != 'unknown')
+
+            if remove_sparse and known_count == 0:
+                continue
+
+            candidates.append((coord, known_count))
+
+    # 排序：已知邻域越多越优先，同等级按 Manhattan 距离
+    def sort_key(item: tuple[tuple[int, int], int]) -> tuple[int, int]:
+        coord, known_count = item
+        dist = abs(coord[0] - center_row) + abs(coord[1] - center_col)
+        return (-known_count, dist)
+
+    candidates.sort(key=sort_key)
+
+    return [coord for coord, _ in candidates]
